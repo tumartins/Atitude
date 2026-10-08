@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b5394">
+<!-- PWA: instalável no Android (Chrome) e no iPhone (Safari → Adicionar à Tela de Início) -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Antropometria">
+<meta name="format-detection" content="telephone=no">
+<title>Antropometria — Coleta offline</title>
+<style>
+:root{
+  --bg:#ffffff; --fg:#111; --muted:#4a5560; --card:#f2f4f7; --borda:#7d8893;
+  --pri:#0b5394; --pri-fg:#fff; --ok:#17733a; --ok-fg:#fff;
+  --warn-bg:#fff1c2; --warn-fg:#5c4300; --warn-borda:#c99a00;
+  --err-bg:#fde0de; --err-fg:#8f1616; --err-borda:#c62828;
+  --campo:#fff; --sombra:0 2px 10px rgba(0,0,0,.18);
+}
+[data-tema="escuro"]{
+  --bg:#121417; --fg:#f1f3f5; --muted:#b3bac2; --card:#1d2126; --borda:#66717c;
+  --pri:#6aaef0; --pri-fg:#08111a; --ok:#3fb86c; --ok-fg:#06140b;
+  --warn-bg:#3a2f00; --warn-fg:#ffe08a; --warn-borda:#b38900;
+  --err-bg:#451313; --err-fg:#ffb7b2; --err-borda:#e05050;
+  --campo:#171a1e; --sombra:0 2px 10px rgba(0,0,0,.6);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:18px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+[hidden]{display:none!important}
+
+/* Cabeçalho fixo */
+header{position:sticky;top:0;z-index:10;background:var(--pri);color:var(--pri-fg);padding:calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 10px calc(12px + env(safe-area-inset-left));box-shadow:var(--sombra)}
+.hdr-linha{display:flex;align-items:center;gap:8px}
+.hdr-linha h1{font-size:18px;margin:0;flex:1}
+#hdr-equipe{font-weight:700;font-size:16px}
+#btn-tema{background:transparent;border:2px solid currentColor;color:inherit;border-radius:8px;min-width:44px;min-height:40px;cursor:pointer}
+nav{display:flex;gap:6px;margin-top:8px}
+nav button{flex:1;min-height:46px;border:2px solid var(--pri-fg);background:transparent;color:var(--pri-fg);border-radius:10px;font-weight:700;cursor:pointer}
+nav button[aria-current="page"]{background:var(--pri-fg);color:var(--pri)}
+
+main{max-width:900px;margin:0 auto;padding:12px calc(16px + env(safe-area-inset-right)) calc(120px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+body{-webkit-tap-highlight-color:transparent}
+h2{font-size:22px;margin:8px 0 12px}
+
+/* Botões */
+.btn{min-height:54px;padding:10px 18px;border-radius:12px;font-weight:700;cursor:pointer;border:2px solid var(--pri);background:var(--bg);color:var(--pri)}
+.btn-pri{background:var(--pri);color:var(--pri-fg)}
+.btn-perigo{border-color:var(--err-borda);color:var(--err-fg);background:var(--err-bg)}
+.btn-ok{background:var(--ok);border-color:var(--ok);color:var(--ok-fg)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-grande{width:100%;min-height:64px;font-size:22px}
+.btn-linha{display:flex;gap:10px;flex-wrap:wrap}
+.btn-linha .btn{flex:1 1 160px}
+
+/* Caixas de alerta */
+.alerta{border:2px solid;border-radius:12px;padding:12px 14px;margin:10px 0}
+.alerta.warn{background:var(--warn-bg);color:var(--warn-fg);border-color:var(--warn-borda)}
+.alerta.erro{background:var(--err-bg);color:var(--err-fg);border-color:var(--err-borda)}
+.alerta.info{background:var(--card);border-color:var(--borda)}
+.alerta p{margin:4px 0}
+
+/* Formulário */
+fieldset{border:2px solid var(--borda);border-radius:14px;padding:10px 14px 14px;margin:0 0 14px;background:var(--card)}
+legend{font-weight:800;padding:0 6px;font-size:18px}
+.grade{display:grid;grid-template-columns:1fr;gap:12px}
+@media (min-width:600px){.grade{grid-template-columns:1fr 1fr}}
+.campo label,.campo .rotulo{display:block;font-weight:700;margin-bottom:4px}
+.un{font-weight:400;color:var(--muted)}
+.campo input[type=text],.campo input[type=date],.campo input[type=datetime-local],.campo textarea,.setup input{
+  width:100%;min-height:56px;padding:10px 12px;font-size:22px;border:2px solid var(--borda);border-radius:10px;background:var(--campo)}
+.campo textarea{min-height:90px;font-size:18px}
+input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
+.campo.tem-warn input{border-color:var(--warn-borda);background:var(--warn-bg);color:var(--warn-fg)}
+.campo.tem-erro input{border-color:var(--err-borda);background:var(--err-bg);color:var(--err-fg)}
+.aviso{font-size:15px;font-weight:600;margin-top:4px;min-height:0}
+.campo.tem-warn .aviso{color:var(--warn-fg)}
+.campo.tem-erro .aviso{color:var(--err-fg)}
+.calc{display:flex;justify-content:space-between;align-items:center;min-height:56px;padding:10px 12px;border:2px dashed var(--borda);border-radius:10px;font-size:20px}
+.calc output{font-weight:800}
+.calc-rot{font-weight:700;font-size:16px}
+
+/* Botões de opção (sexo, mão) */
+.seg{display:flex;gap:10px}
+.seg label{flex:1;position:relative;min-height:56px;display:flex;align-items:center;justify-content:center;border:2px solid var(--borda);border-radius:10px;font-weight:800;font-size:20px;background:var(--campo);cursor:pointer;margin:0}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+/* Classes aplicadas via JS (o seletor :has não existe no iOS < 15.4) */
+.seg label.marcado{background:var(--pri);color:var(--pri-fg);border-color:var(--pri)}
+.seg label.focado{outline:3px solid var(--pri);outline-offset:2px}
+
+.id-box{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--card);border:2px solid var(--pri);border-radius:14px;padding:10px 14px;margin-bottom:10px}
+.id-box span{font-weight:700;color:var(--muted)}
+.id-box strong{font-size:30px;letter-spacing:1px;font-variant-numeric:tabular-nums}
+.lgpd-mini{font-size:15px;color:var(--muted);margin:4px 0 12px}
+.banner-edicao{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--warn-bg);color:var(--warn-fg);border:2px solid var(--warn-borda);border-radius:12px;padding:10px 14px;margin-bottom:10px;font-size:20px}
+
+/* Setup */
+.setup label{display:block;font-weight:700;margin:14px 0 4px}
+.setup input{text-transform:uppercase}
+#s-avaliador{text-transform:none}
+.dica{font-size:15px;color:var(--muted);margin:4px 0}
+
+/* Lista de registros */
+.busca{width:100%;min-height:54px;padding:10px 12px;font-size:20px;border:2px solid var(--borda);border-radius:10px;background:var(--campo);text-transform:uppercase}
+.cartao{border:2px solid var(--borda);border-radius:12px;padding:10px 12px;margin:10px 0;background:var(--card)}
+.cartao-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.cartao-top strong{font-size:22px}
+.cartao-info{font-size:16px;color:var(--muted);margin:4px 0 8px}
+.cartao .btn{min-height:46px;padding:6px 14px}
+.flag{color:var(--warn-fg);background:var(--warn-bg);border:1px solid var(--warn-borda);border-radius:6px;padding:0 6px;font-size:14px;font-weight:700}
+.resumo{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}
+.resumo div{flex:1 1 140px;background:var(--card);border:2px solid var(--borda);border-radius:12px;padding:8px 12px}
+.resumo b{display:block;font-size:26px}
+
+/* Toast de confirmação */
+#toast{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:50;max-width:700px;margin:0 auto;background:var(--ok);color:var(--ok-fg);padding:16px 18px;border-radius:14px;font-size:22px;font-weight:800;text-align:center;box-shadow:var(--sombra)}
+#toast.erro{background:var(--err-borda);color:#fff}
+
+/* Modal */
+#modal{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+#modal .caixa{background:var(--bg);color:var(--fg);border-radius:16px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:18px;box-shadow:var(--sombra);border:3px solid var(--borda)}
+#modal .caixa.erro{border-color:var(--err-borda)}
+#modal .caixa.warn{border-color:var(--warn-borda)}
+#modal h3{margin:0 0 10px;font-size:22px}
+#modal ul{padding-left:22px;margin:8px 0 14px}
+#modal li{margin:6px 0}
+#modal input{width:100%;min-height:54px;font-size:22px;padding:8px 12px;border:2px solid var(--borda);border-radius:10px;background:var(--campo);margin:6px 0 14px;text-transform:uppercase}
+
+/* Bloqueio total (armazenamento indisponível) */
+#bloqueio{position:fixed;inset:0;z-index:200;background:#7a0d0d;color:#fff;padding:calc(24px + env(safe-area-inset-top)) 24px 24px;overflow:auto}
+#instalar-ios{position:fixed;inset:0;z-index:150;background:var(--bg);color:var(--fg);padding:calc(24px + env(safe-area-inset-top)) 20px 24px;overflow:auto}
+#instalar-ios ol{font-size:20px;line-height:1.6;padding-left:24px}
+.banner{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+#bloqueio h2{font-size:28px}
+#bloqueio code{background:rgba(255,255,255,.15);padding:2px 6px;border-radius:4px;word-break:break-all}
+</style>
+</head>
+<body>
+
+<div id="bloqueio" hidden>
+  <h2>⛔ Armazenamento indisponível</h2>
+  <p><b>NÃO colete dados neste modo.</b> O navegador não está conseguindo gravar no banco local; os dados seriam perdidos.</p>
+  <p>Detalhe técnico: <code id="bloqueio-detalhe"></code></p>
+  <p>Endereço atual: <code id="bloqueio-url"></code></p>
+  <h3>O que tentar</h3>
+  <ol>
+    <li>Abra pelo <b>ícone do app</b> na tela inicial (ou pelo endereço oficial no Chrome/Safari).</li>
+    <li>Não use aba anônima/privada.</li>
+    <li>Verifique se há espaço livre no aparelho.</li>
+    <li>Feche outras abas deste app e abra de novo.</li>
+  </ol>
+</div>
+
+<!-- iPhone/iPad fora do modo instalado: dados do Safari podem ser apagados pelo iOS -->
+<div id="instalar-ios" hidden>
+  <h2>📲 Instale antes de coletar</h2>
+  <p>No iPhone, os dados só ficam seguros no <b>app instalado</b>. No Safari, o iOS pode apagar tudo após 7 dias sem uso — e os dados do Safari <b>não</b> aparecem no app instalado.</p>
+  <ol>
+    <li>Toque em <b>Compartilhar</b> <span aria-hidden="true">⬆︎</span> (barra do Safari).</li>
+    <li>Escolha <b>Adicionar à Tela de Início</b> → <b>Adicionar</b>.</li>
+    <li>Feche o Safari e abra pelo ícone <b>Antropometria</b>.</li>
+  </ol>
+  <p class="dica">Faça isso no <b>Safari</b>. Em outros navegadores do iPhone a opção pode não aparecer.</p>
+  <p><button type="button" id="btn-ios-continuar" class="btn">Continuar no Safari (só para teste)</button></p>
+</div>
+
+<header>
+  <div class="hdr-linha">
+    <h1>Antropometria</h1>
+    <span id="hdr-equipe"></span>
+    <button id="btn-tema" type="button" title="Alternar tema claro/escuro" aria-label="Alternar tema">☾</button>
+  </div>
+  <nav>
+    <button type="button" data-tela="coleta">Coleta</button>
+    <button type="button" data-tela="registros">Registros</button>
+    <button type="button" data-tela="setup">Config.</button>
+  </nav>
+</header>
+
+<main>
+  <div id="aviso-atualizacao" class="alerta info banner" hidden>
+    <span>🔄 Nova versão do app disponível.</span>
+    <button type="button" id="btn-atualizar" class="btn btn-pri">Atualizar agora</button>
+  </div>
+  <div id="aviso-instalar" class="alerta info banner" hidden>
+    <span>📲 Instale o app para abrir sem internet pelo ícone.</span>
+    <button type="button" id="btn-instalar" class="btn btn-pri">Instalar</button>
+  </div>
+  <div id="aviso-armazenamento" class="alerta warn" hidden></div>
+
+  <!-- ===================== SETUP ===================== -->
+  <section id="tela-setup" class="tela setup" hidden>
+    <h2>Configuração do aparelho</h2>
+    <div class="alerta info">
+      <p>🔒 <b>LGPD:</b> este app <b>não coleta nome</b> do adolescente. Cada avaliação recebe apenas um ID anônimo. Não escreva nomes em nenhum campo, inclusive Observações.</p>
+    </div>
+    <div class="alerta warn">
+      <p>⚠ <b>Um código por aparelho.</b> Dois tablets com o mesmo código geram IDs repetidos (ex.: dois "EQ01-0001"). Se a equipe usar mais de um aparelho, cada um precisa de um código próprio (EQ01, EQ02…).</p>
+    </div>
+    <form id="form-setup" novalidate autocomplete="off">
+      <label for="s-equipe">Código da equipe / aparelho</label>
+      <input id="s-equipe" name="equipe" type="text" maxlength="4" placeholder="EQ01" autocapitalize="characters" enterkeyhint="next">
+      <p class="dica">Formato: EQ + 2 dígitos (EQ01 a EQ99).</p>
+      <label for="s-avaliador">Nome do avaliador (opcional)</label>
+      <input id="s-avaliador" name="avaliador" type="text" maxlength="60" enterkeyhint="done">
+      <p class="dica">Fica gravado em cada registro feito neste aparelho.</p>
+      <div id="setup-erro" class="alerta erro" hidden></div>
+      <p><button type="submit" class="btn btn-pri btn-grande" id="btn-iniciar">Iniciar coleta</button></p>
+    </form>
+    <h2>Armazenamento</h2>
+    <div id="info-armazenamento" class="alerta info"><p>Verificando…</p></div>
+  </section>
+
+  <!-- ===================== COLETA ===================== -->
+  <section id="tela-coleta" class="tela" hidden>
+    <div id="banner-edicao" class="banner-edicao" hidden>
+      <span>✎ Editando <b id="edicao-id"></b></span>
+      <button type="button" id="btn-cancelar-edicao" class="btn">Cancelar edição</button>
+    </div>
+    <div class="id-box"><span id="id-rotulo">ID desta avaliação</span><strong id="id-atual">—</strong></div>
+    <p class="lgpd-mini">🔒 Anônimo: não registre o nome do adolescente em nenhum campo.</p>
+    <div id="aviso-backup" class="alerta warn" hidden></div>
+
+    <form id="form" novalidate autocomplete="off">
+      <fieldset>
+        <legend>Identificação</legend>
+        <div class="grade">
+          <div class="campo" data-campo="idAvaliando">
+            <label for="f-idAvaliando">ID do avaliando <span class="un">(só números)</span></label>
+            <input id="f-idAvaliando" name="idAvaliando" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off" enterkeyhint="next">
+            <div class="aviso"></div>
+          </div>
+          <div class="campo" data-campo="sexo">
+            <span class="rotulo">Sexo</span>
+            <div class="seg">
+              <label><input type="radio" name="sexo" value="M" id="f-sexo-M"><span>Masculino</span></label>
+              <label><input type="radio" name="sexo" value="F"><span>Feminino</span></label>
+            </div>
+            <div class="aviso"></div>
+          </div>
+          <div class="campo" data-campo="dataHora">
+            <label for="f-dataHora">Data e hora da coleta</label>
+            <input id="f-dataHora" name="dataHora" type="datetime-local">
+            <div class="aviso"></div>
+          </div>
+          <div class="campo" data-campo="dataNasc">
+            <label for="f-dataNasc">Data de nascimento</label>
+            <input id="f-dataNasc" name="dataNasc" type="date">
+            <div class="aviso"></div>
+          </div>
+          <div class="campo">
+            <span class="rotulo">Idade (calculada)</span>
+            <div class="calc"><output id="o-idade">—</output></div>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Massa e estatura</legend>
+        <div class="grade" data-gerar="peso,estatura"></div>
+        <div class="grade" style="margin-top:12px">
+          <div class="campo"><span class="rotulo">IMC (calculado)</span><div class="calc"><output id="o-imc">—</output><span class="un">kg/m²</span></div></div>
+        </div>
+        <div class="grade" style="margin-top:12px" data-gerar="estSentada"></div>
+        <div class="grade" style="margin-top:12px">
+          <div class="campo"><span class="rotulo">Comprimento de pernas (calculado)</span><div class="calc"><output id="o-pernas">—</output><span class="un">cm</span></div></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Força de preensão manual</legend>
+        <div class="campo" data-campo="maoDominante">
+          <span class="rotulo">Mão dominante</span>
+          <div class="seg">
+            <label><input type="radio" name="maoDominante" value="D"><span>Direita</span></label>
+            <label><input type="radio" name="maoDominante" value="E"><span>Esquerda</span></label>
+          </div>
+          <div class="aviso"></div>
+        </div>
+        <div class="grade" style="margin-top:12px" data-gerar="preensao1,preensao2,preensao3"></div>
+        <div class="grade" style="margin-top:12px">
+          <div class="campo"><span class="rotulo">Preensão máxima (calculada)</span><div class="calc"><output id="o-preensao">—</output><span class="un">kgf</span></div></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Circunferências</legend>
+        <div class="grade" data-gerar="cintura,braco"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Dobras cutâneas</legend>
+        <div class="grade" data-gerar="dobraTricipital,dobraSubescapular,dobraAbdominal"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Observações</legend>
+        <div class="campo">
+          <label for="f-obs">Observações <span class="un">(sem nomes)</span></label>
+          <textarea id="f-obs" name="obs" maxlength="500" rows="3"></textarea>
+        </div>
+      </fieldset>
+
+      <button type="submit" id="btn-salvar" class="btn btn-ok btn-grande">Salvar avaliação</button>
+      <p class="btn-linha" style="margin-top:12px"><button type="button" id="btn-limpar" class="btn">Limpar formulário</button></p>
+    </form>
+  </section>
+
+  <!-- ===================== REGISTROS ===================== -->
+  <section id="tela-registros" class="tela" hidden>
+    <h2>Registros neste aparelho</h2>
+    <div class="resumo">
+      <div>Total<b id="r-total">0</b></div>
+      <div>Desta equipe<b id="r-equipe">0</b></div>
+      <div>Sem backup<b id="r-sembackup">0</b></div>
+    </div>
+    <p class="dica" id="r-ultimo-backup"></p>
+
+    <h3>Exportar / backup</h3>
+    <p class="dica">Exporte <b>no fim de cada dia</b> e copie os arquivos para fora do tablet. O CSV abre no Excel; o JSON é o backup completo (inclui excluídos).</p>
+    <div class="btn-linha">
+      <button type="button" id="btn-csv" class="btn btn-pri">Exportar CSV (Excel)</button>
+      <button type="button" id="btn-json" class="btn">Exportar JSON (backup)</button>
+    </div>
+
+    <h3>Importar / mesclar</h3>
+    <p class="dica">Aceita CSV ou JSON exportados por este app. IDs já existentes são ignorados; conflitos (mesmo ID, dados diferentes) são listados.</p>
+    <div class="btn-linha">
+      <button type="button" id="btn-importar" class="btn">Importar arquivo…</button>
+      <input type="file" id="arquivo-import" accept=".csv,.json,text/csv,application/json" hidden>
+    </div>
+
+    <h3>Buscar</h3>
+    <input type="search" id="busca" class="busca" placeholder="ID (EQ01-0042) ou ID do avaliando" autocomplete="off" autocapitalize="characters">
+    <p class="dica" id="lista-info"></p>
+    <div id="lista"></div>
+    <p><button type="button" id="btn-mais" class="btn" hidden>Mostrar mais</button></p>
+  </section>
+</main>
+
+<div id="toast" role="status" aria-live="assertive" hidden></div>
+<div id="modal" hidden><div class="caixa" role="dialog" aria-modal="true"></div></div>
+
+<script>
+'use strict';
+/* =========================================================================
+   App de antropometria offline — arquivo único.
+   Prioridades: 1) não perder dados  2) IDs não colidirem  3) offline
+   ========================================================================= */
+
+const APP_VERSAO = '1.2.0'; // manter igual a VERSAO em sw.js
+const DB_NOME = 'antropometria';
+const DB_VERSAO = 2; // v2: índice idAvaliando
+const REGEX_AVALIANDO = /^\d{1,12}$/;
+// iPadOS se identifica como Mac; o toque denuncia
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const INSTALADO = window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+const HOSPEDADO = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const REGEX_EQUIPE = /^EQ\d{2}$/;
+const LS = {
+  equipe: 'antropo_equipe', avaliador: 'antropo_avaliador', tema: 'antropo_tema',
+  rascunho: 'antropo_rascunho', contador: 'antropo_contador_', backup: 'antropo_ultimo_backup'
+};
+
+// Campos numéricos: rótulo, unidade e faixa plausível (fora dela = aviso + confirmação)
+const NUMERICOS = {
+  peso:              { rotulo: 'Peso',                   un: 'kg',  min: 20,  max: 200 },
+  estatura:          { rotulo: 'Estatura',               un: 'cm',  min: 100, max: 220 },
+  estSentada:        { rotulo: 'Estatura sentada',       un: 'cm',  min: 50,  max: 120 },
+  preensao1:         { rotulo: 'Preensão — tentativa 1', un: 'kgf', min: 5,   max: 80 },
+  preensao2:         { rotulo: 'Preensão — tentativa 2', un: 'kgf', min: 5,   max: 80 },
+  preensao3:         { rotulo: 'Preensão — tentativa 3', un: 'kgf', min: 5,   max: 80 },
+  cintura:           { rotulo: 'Circunferência da cintura', un: 'cm', min: 40, max: 150 },
+  braco:             { rotulo: 'Circunferência do braço',   un: 'cm', min: 15, max: 50 },
+  dobraTricipital:   { rotulo: 'Dobra tricipital',       un: 'mm',  min: 2,   max: 60 },
+  dobraSubescapular: { rotulo: 'Dobra subescapular',     un: 'mm',  min: 2,   max: 60 },
+  dobraAbdominal:    { rotulo: 'Dobra abdominal',        un: 'mm',  min: 2,   max: 60 }
+};
+
+// Colunas do CSV: [chave interna, cabeçalho]. Ordem = ordem no arquivo.
+const COLUNAS = [
+  ['id','id'], ['idAvaliando','id_avaliando'], ['equipe','equipe'], ['seq','sequencial'], ['avaliador','avaliador'],
+  ['dataHora','data_hora_coleta'], ['sexo','sexo'], ['dataNasc','data_nascimento'], ['idade','idade_anos'],
+  ['peso','peso_kg'], ['estatura','estatura_cm'], ['imc','imc_kg_m2'],
+  ['estSentada','estatura_sentada_cm'], ['compPernas','comprimento_pernas_cm'],
+  ['maoDominante','mao_dominante'], ['preensao1','preensao_t1_kgf'], ['preensao2','preensao_t2_kgf'],
+  ['preensao3','preensao_t3_kgf'], ['preensaoMax','preensao_max_kgf'],
+  ['cintura','circ_cintura_cm'], ['braco','circ_braco_cm'],
+  ['dobraTricipital','dobra_tricipital_mm'], ['dobraSubescapular','dobra_subescapular_mm'], ['dobraAbdominal','dobra_abdominal_mm'],
+  ['obs','observacoes'], ['alertas','alertas_confirmados'],
+  ['criadoEm','criado_em'], ['atualizadoEm','atualizado_em'], ['importadoEm','importado_em'], ['versaoApp','versao_app']
+];
+const COLS_NUM = new Set(['seq','idade','imc','compPernas','preensaoMax', ...Object.keys(NUMERICOS)]);
+const COLS_TEXTO_LIVRE = new Set(['avaliador','obs']);
+
+const estado = {
+  equipe: '', avaliador: '', editandoId: null, salvando: false,
+  semBackup: 0, persistente: null, registros: [], limiteLista: 100,
+  duplicado: null // { codigo, ids: [...] } — resultado da última checagem de avaliando repetido
+};
+let db = null;
+
+/* ---------------- Utilitários ---------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const form = $('#form');
+
+function lsGet(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function lsSet(k,v){ try { localStorage.setItem(k,v); } catch(e){ /* localStorage é só espelho; IndexedDB é a fonte da verdade */ } }
+function lsDel(k){ try { localStorage.removeItem(k); } catch(e){} }
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(n, dec = 1){ return (n === null || n === undefined || !isFinite(n)) ? '—' : n.toFixed(dec).replace('.', ','); }
+function arred(n, dec){ const f = Math.pow(10, dec); return Math.round(n * f) / f; }
+function pad(n, t = 2){ return String(n).padStart(t, '0'); }
+function formatarId(eq, n){ return `${eq}-${pad(n, 4)}`; }
+
+// Data/hora local no formato do input datetime-local
+function agoraLocal(){
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function carimbo(){ const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`; }
+
+function partesData(s){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || '');
+  return m ? { a: +m[1], m: +m[2], d: +m[3] } : null;
+}
+// Idade decimal (dias/365,25) na data da coleta + idade em anos/meses para exibir
+function calcIdade(nasc, coleta){
+  const n = partesData(nasc), c = partesData(coleta);
+  if (!n || !c) return null;
+  const dias = (Date.UTC(c.a, c.m-1, c.d) - Date.UTC(n.a, n.m-1, n.d)) / 864e5;
+  if (!isFinite(dias)) return null;
+  let anos = c.a - n.a, meses = c.m - n.m;
+  if (c.d < n.d) meses--;
+  if (meses < 0) { anos--; meses += 12; }
+  return { decimal: arred(dias / 365.25, 2), anos, meses, dias };
+}
+
+function msgErro(e){
+  const nome = (e && e.name) || '';
+  const txt = (e && e.message) || String(e);
+  if (nome === 'QuotaExceededError' || /quota/i.test(txt))
+    return 'Armazenamento do aparelho CHEIO. Exporte o backup (JSON e CSV) agora e libere espaço no tablet.';
+  if (nome === 'ConstraintError') return 'ID já existe no banco.';
+  if (nome === 'InvalidStateError') return 'Conexão com o banco foi perdida. Recarregue a página (os dados salvos não se perdem).';
+  return (nome ? nome + ': ' : '') + txt;
+}
+
+/* ---------------- IndexedDB ---------------- */
+function abrirDB(){
+  return new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error('IndexedDB não existe neste navegador/modo.'));
+    let req;
+    try { req = indexedDB.open(DB_NOME, DB_VERSAO); } catch (e) { return rej(e); }
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      // Migração incremental: preserva os dados de versões anteriores
+      const s = d.objectStoreNames.contains('medidas')
+        ? req.transaction.objectStore('medidas')
+        : d.createObjectStore('medidas', { keyPath: 'id' });
+      if (!s.indexNames.contains('equipe')) s.createIndex('equipe', 'equipe');
+      if (!s.indexNames.contains('idAvaliando')) s.createIndex('idAvaliando', 'idAvaliando');
+      if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'chave' });
+      // Registros excluídos vão para a lixeira (não se perdem e o ID nunca é reutilizado)
+      if (!d.objectStoreNames.contains('lixeira')) d.createObjectStore('lixeira', { keyPath: 'id' });
+    };
+    req.onsuccess = () => {
+      const d = req.result;
+      d.onversionchange = () => { d.close(); mostrarBloqueio(new Error('O app foi atualizado em outra aba. Feche esta aba e recarregue.')); };
+      res(d);
+    };
+    req.onerror = () => rej(req.error || new Error('Falha ao abrir o IndexedDB.'));
+    req.onblocked = () => rej(new Error('Banco bloqueado por outra aba deste app. Feche as outras abas.'));
+  });
+}
+
+// Executa fn dentro de uma transação; resolve só quando a transação COMPLETA (dado gravado em disco)
+function tx(stores, modo, fn){
+  return new Promise((res, rej) => {
+    let t;
+    try { t = db.transaction(stores, modo); } catch (e) { return rej(e); }
+    const saida = {};
+    t.oncomplete = () => res(saida.valor);
+    t.onabort = () => rej(t.error || saida.erro || new Error('Transação abortada.'));
+    try { fn(t, saida); } catch (e) { saida.erro = e; try { t.abort(); } catch (_) {} }
+  });
+}
+const lerUm = (store, chave) => tx([store], 'readonly', (t, s) => { const r = t.objectStore(store).get(chave); r.onsuccess = () => s.valor = r.result; });
+const lerTodos = store => tx([store], 'readonly', (t, s) => { const r = t.objectStore(store).getAll(); r.onsuccess = () => s.valor = r.result; });
+const gravarMeta = (chave, valor) => tx(['meta'], 'readwrite', t => t.objectStore('meta').put({ chave, valor }));
+
+async function autoTeste(){
+  const k = '__autoteste';
+  const v = Date.now();
+  await gravarMeta(k, v);
+  const lido = await lerUm('meta', k);
+  if (!lido || lido.valor !== v) throw new Error('Gravação de teste não pôde ser lida de volta.');
+  await tx(['meta'], 'readwrite', t => t.objectStore('meta').delete(k));
+}
+
+async function pedirPersistencia(){
+  if (!navigator.storage || !navigator.storage.persist) return null;
+  try { return (await navigator.storage.persisted()) || (await navigator.storage.persist()); }
+  catch (e) { return null; }
+}
+
+/* ---------------- Contador / IDs ---------------- */
+const chaveContador = eq => 'contador_' + eq;
+
+// Contador = maior entre: meta, espelho no localStorage e maior sequencial já usado (inclui lixeira).
+// Garante que um número nunca é reutilizado, mesmo após restaurar backup.
+async function sincronizarContador(eq){
+  const [ativos, excluidos, meta] = await Promise.all([
+    tx(['medidas'], 'readonly', (t, s) => { const r = t.objectStore('medidas').index('equipe').getAll(eq); r.onsuccess = () => s.valor = r.result; }),
+    lerTodos('lixeira'),
+    lerUm('meta', chaveContador(eq))
+  ]);
+  let maior = 0;
+  for (const r of ativos) if (r.seq > maior) maior = r.seq;
+  for (const r of excluidos) if (r.equipe === eq && r.seq > maior) maior = r.seq;
+  const atual = meta ? meta.valor : 0;
+  const espelho = parseInt(lsGet(LS.contador + eq) || '0', 10) || 0;
+  const novo = Math.max(atual, espelho, maior);
+  if (novo !== atual) await gravarMeta(chaveContador(eq), novo);
+  lsSet(LS.contador + eq, String(novo));
+  return novo;
+}
+
+async function proximoId(){
+  const m = await lerUm('meta', chaveContador(estado.equipe));
+  return formatarId(estado.equipe, (m ? m.valor : 0) + 1);
+}
+
+// Grava registro novo e avança o contador NA MESMA transação (atômico).
+// Usa add(): nunca sobrescreve. Se o ID existir (ativo ou na lixeira), pula para o próximo número.
+function salvarNovo(dados){
+  const eq = estado.equipe;
+  return tx(['medidas', 'meta', 'lixeira'], 'readwrite', (t, s) => {
+    const sm = t.objectStore('medidas'), meta = t.objectStore('meta'), lix = t.objectStore('lixeira');
+    const rc = meta.get(chaveContador(eq));
+    rc.onsuccess = () => {
+      let n = (rc.result ? rc.result.valor : 0) + 1, tentativas = 0;
+      const tentar = () => {
+        if (++tentativas > 1000) { t.abort(); return; }
+        const id = formatarId(eq, n);
+        const rl = lix.get(id);
+        rl.onsuccess = () => {
+          if (rl.result) { n++; return tentar(); }
+          const reg = { ...dados, id, equipe: eq, seq: n };
+          const ra = sm.add(reg);
+          ra.onsuccess = () => { meta.put({ chave: chaveContador(eq), valor: n }); s.valor = reg; };
+          ra.onerror = ev => {
+            if (ra.error && ra.error.name === 'ConstraintError') { ev.preventDefault(); ev.stopPropagation(); n++; tentar(); }
+          };
+        };
+      };
+      tentar();
+    };
+  }).then(reg => { lsSet(LS.contador + eq, String(reg.seq)); return reg; });
+}
+
+function atualizarRegistro(id, dados){
+  return tx(['medidas'], 'readwrite', (t, s) => {
+    const st = t.objectStore('medidas');
+    const r = st.get(id);
+    r.onsuccess = () => {
+      if (!r.result) { s.erro = new Error('Registro ' + id + ' não encontrado.'); t.abort(); return; }
+      const orig = r.result;
+      // ID, equipe, sequencial e data de criação nunca mudam na edição
+      const reg = { ...orig, ...dados, id: orig.id, equipe: orig.equipe, seq: orig.seq, criadoEm: orig.criadoEm, atualizadoEm: new Date().toISOString() };
+      st.put(reg);
+      s.valor = reg;
+    };
+  });
+}
+
+function excluirRegistro(id){
+  return tx(['medidas', 'lixeira'], 'readwrite', t => {
+    const st = t.objectStore('medidas');
+    const r = st.get(id);
+    r.onsuccess = () => {
+      if (!r.result) return;
+      t.objectStore('lixeira').put({ ...r.result, excluidoEm: new Date().toISOString() });
+      st.delete(id);
+    };
+  });
+}
+
+/* ---------------- Formulário: leitura e validação ---------------- */
+function lerNumero(nome){
+  const bruto = (form.elements[nome].value || '').trim();
+  if (bruto === '') return { vazio: true, valor: null };
+  const s = bruto.replace(',', '.');
+  if (!/^\d{1,3}(\.\d)?$/.test(s)) return { erro: 'número inválido (use no máximo 1 casa decimal, ex.: 45,3)', valor: null };
+  return { valor: parseFloat(s) };
+}
+
+// Lê o formulário inteiro. Retorna erros (bloqueiam), avisos (pedem confirmação),
+// mensagens por campo (exibição inline) e os dados prontos para gravar.
+function coletar(){
+  const erros = [], avisos = [], vazios = [], porCampo = {};
+  const marca = (campo, tipo, msg) => { if (!porCampo[campo] || tipo === 'erro') porCampo[campo] = { tipo, msg }; };
+  const f = form.elements;
+  const d = {};
+
+  d.idAvaliando = f.idAvaliando.value.trim();
+  if (!d.idAvaliando) erros.push('ID do avaliando é obrigatório.');
+  else if (!REGEX_AVALIANDO.test(d.idAvaliando)) { erros.push('ID do avaliando: use só números (até 12 dígitos).'); marca('idAvaliando', 'erro', 'Só números.'); }
+  else if (estado.duplicado && estado.duplicado.codigo === d.idAvaliando && estado.duplicado.ids.length) {
+    const m = `Avaliando ${d.idAvaliando} já tem avaliação neste aparelho: ${estado.duplicado.ids.join(', ')}.`;
+    avisos.push(m); marca('idAvaliando', 'warn', m);
+  }
+
+  d.dataHora = f.dataHora.value;
+  d.sexo = f.sexo.value || '';
+  d.dataNasc = f.dataNasc.value;
+  d.maoDominante = f.maoDominante.value || '';
+  d.obs = f.obs.value.trim();
+
+  if (!d.dataHora) erros.push('Data/hora da coleta é obrigatória.');
+  if (!d.sexo) erros.push('Selecione o sexo.');
+  if (!d.dataNasc) erros.push('Data de nascimento é obrigatória.');
+
+  if (d.dataHora && new Date(d.dataHora).getTime() > Date.now() + 10 * 60000) {
+    avisos.push('Data/hora da coleta está no futuro.'); marca('dataHora', 'warn', 'Data no futuro.');
+  }
+
+  d.idade = null;
+  const id = calcIdade(d.dataNasc, d.dataHora);
+  if (id) {
+    if (id.dias < 0) { erros.push('Data de nascimento é posterior à data da coleta.'); marca('dataNasc', 'erro', 'Nascimento depois da coleta.'); }
+    else {
+      d.idade = id.decimal;
+      if (id.anos < 10 || id.anos > 19) {
+        const m = `Idade ${id.anos} anos: fora da faixa adolescente OMS (10–19).`;
+        avisos.push(m); marca('dataNasc', 'warn', m);
+      }
+    }
+  }
+
+  for (const [k, c] of Object.entries(NUMERICOS)) {
+    const r = lerNumero(k);
+    d[k] = r.valor;
+    if (r.erro) { erros.push(`${c.rotulo}: ${r.erro}.`); marca(k, 'erro', r.erro); continue; }
+    if (r.vazio) { vazios.push(c.rotulo); continue; }
+    if (r.valor < c.min || r.valor > c.max) {
+      const m = `${fmt(r.valor)} ${c.un} fora da faixa ${c.min}–${c.max}`;
+      avisos.push(`${c.rotulo}: ${m}.`); marca(k, 'warn', m + '.');
+    }
+  }
+
+  // Calculados
+  d.imc = (d.peso != null && d.estatura != null && d.estatura > 0) ? arred(d.peso / Math.pow(d.estatura / 100, 2), 1) : null;
+  d.compPernas = null;
+  if (d.estatura != null && d.estSentada != null) {
+    if (d.estSentada >= d.estatura) {
+      erros.push('Estatura sentada ≥ estatura: provável erro de digitação.');
+      marca('estSentada', 'erro', 'Maior ou igual à estatura.');
+    } else {
+      d.compPernas = arred(d.estatura - d.estSentada, 1);
+      const razao = d.estSentada / d.estatura;
+      if (razao < 0.45 || razao > 0.60) {
+        const m = `Estatura sentada = ${fmt(razao * 100, 1)}% da estatura (esperado 45–60%).`;
+        avisos.push(m); marca('estSentada', 'warn', m);
+      }
+    }
+  }
+
+  const pre = [d.preensao1, d.preensao2, d.preensao3].filter(v => v != null);
+  d.preensaoMax = pre.length ? Math.max(...pre) : null;
+  if (pre.length && !d.maoDominante) { erros.push('Informe a mão dominante (preensão foi preenchida).'); marca('maoDominante', 'erro', 'Obrigatório quando há preensão.'); }
+  if (pre.length >= 2) {
+    const mx = Math.max(...pre), mn = Math.min(...pre);
+    if (mx > 0 && (mx - mn) / mx > 0.20) {
+      const m = `Tentativas de preensão diferem ${fmt((mx - mn) / mx * 100, 0)}% entre si (> 20%).`;
+      avisos.push(m); marca('preensao3', 'warn', m);
+    }
+  }
+
+  if (vazios.length) avisos.push(`Campos vazios: ${vazios.join(', ')}.`);
+  return { erros, avisos, porCampo, d, idade: id };
+}
+
+// Atualiza calculados e mensagens inline enquanto digita
+function marcarOpcoes(){
+  for (const inp of $$('.seg input')) inp.parentElement.classList.toggle('marcado', inp.checked);
+}
+
+function atualizarTela(){
+  marcarOpcoes();
+  const { porCampo, d, idade } = coletar();
+  $('#o-idade').textContent = (idade && idade.dias >= 0) ? `${fmt(idade.decimal, 1)} anos (${idade.anos}a ${idade.meses}m)` : '—';
+  $('#o-imc').textContent = fmt(d.imc, 1);
+  $('#o-pernas').textContent = fmt(d.compPernas, 1);
+  $('#o-preensao').textContent = fmt(d.preensaoMax, 1);
+  for (const el of $$('#form .campo[data-campo]')) {
+    const info = porCampo[el.dataset.campo];
+    el.classList.toggle('tem-warn', !!info && info.tipo === 'warn');
+    el.classList.toggle('tem-erro', !!info && info.tipo === 'erro');
+    const av = el.querySelector('.aviso');
+    if (av) av.textContent = info ? (info.tipo === 'erro' ? '✖ ' : '⚠ ') + info.msg : '';
+  }
+}
+
+function gerarCamposNumericos(){
+  for (const grade of $$('[data-gerar]')) {
+    grade.innerHTML = grade.dataset.gerar.split(',').map(k => {
+      const c = NUMERICOS[k];
+      return `<div class="campo" data-campo="${k}">
+        <label for="f-${k}">${esc(c.rotulo)} <span class="un">(${c.un})</span></label>
+        <input id="f-${k}" name="${k}" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="${c.min}–${c.max}">
+        <div class="aviso"></div></div>`;
+    }).join('');
+  }
+}
+
+function limparForm(){
+  form.reset();
+  estado.duplicado = null;
+  form.elements.dataHora.value = agoraLocal();
+  lsDel(LS.rascunho);
+  atualizarTela();
+}
+
+function preencherForm(reg){
+  form.reset();
+  for (const el of form.elements) {
+    if (!el.name) continue;
+    const v = reg[el.name];
+    if (el.type === 'radio') el.checked = (v === el.value);
+    else if (NUMERICOS[el.name]) el.value = v == null ? '' : String(v).replace('.', ',');
+    else el.value = v == null ? '' : v;
+  }
+  atualizarTela();
+}
+
+function formTemDados(){
+  return Array.from(form.elements).some(el => el.name && el.name !== 'dataHora' && (el.type === 'radio' ? el.checked : (el.value || '').trim() !== ''));
+}
+
+// Rascunho: protege contra a aba ser fechada/recarregada no meio do preenchimento
+function salvarRascunho(){
+  if (estado.editandoId) return;
+  if (!formTemDados()) { lsDel(LS.rascunho); return; }
+  const dados = {};
+  for (const el of form.elements) {
+    if (!el.name) continue;
+    if (el.type === 'radio') { if (el.checked) dados[el.name] = el.value; }
+    else dados[el.name] = el.value;
+  }
+  lsSet(LS.rascunho, JSON.stringify(dados));
+}
+function restaurarRascunho(){
+  const txt = lsGet(LS.rascunho);
+  if (!txt) return false;
+  try { preencherForm(JSON.parse(txt)); return true; } catch (e) { lsDel(LS.rascunho); return false; }
+}
+
+// Procura outros registros (ativos) com o mesmo ID do avaliando, ignorando o que está em edição
+async function checarDuplicado(){
+  const codigo = form.elements.idAvaliando.value.trim();
+  if (!REGEX_AVALIANDO.test(codigo)) { estado.duplicado = null; return; }
+  try {
+    const regs = await tx(['medidas'], 'readonly', (t, s) => { const r = t.objectStore('medidas').index('idAvaliando').getAll(codigo); r.onsuccess = () => s.valor = r.result; });
+    estado.duplicado = { codigo, ids: regs.filter(r => r.id !== estado.editandoId).map(r => r.id) };
+  } catch (e) { estado.duplicado = null; console.error(e); }
+  atualizarTela();
+}
+
+/* ---------------- Salvar ---------------- */
+async function aoSalvar(ev){
+  ev.preventDefault();
+  if (estado.salvando) return;
+  await checarDuplicado(); // garante checagem atualizada mesmo se o campo não perdeu o foco
+  const { erros, avisos, porCampo, d } = coletar();
+  atualizarTela();
+
+  if (erros.length) {
+    await modal({ titulo: 'Corrija antes de salvar', tipo: 'erro', lista: erros, botoes: [{ txt: 'Voltar e corrigir', valor: true, cls: 'btn-pri' }] });
+    focarPrimeiroProblema(porCampo, d);
+    return;
+  }
+  if (avisos.length) {
+    const ok = await modal({ titulo: 'Confira antes de salvar', tipo: 'warn', lista: avisos,
+      botoes: [{ txt: 'Corrigir', valor: false }, { txt: 'Salvar mesmo assim', valor: true, cls: 'btn-ok' }] });
+    if (!ok) { focarPrimeiroProblema(porCampo, d); return; }
+  }
+
+  d.alertas = avisos;
+  d.versaoApp = APP_VERSAO;
+  estado.salvando = true;
+  $('#btn-salvar').disabled = true;
+  try {
+    if (estado.editandoId) {
+      const reg = await atualizarRegistro(estado.editandoId, d);
+      toast(`✓ Alterações salvas — ${reg.id}`);
+      await sairEdicao(false);
+      mostrarTela('registros');
+    } else {
+      d.avaliador = estado.avaliador;
+      d.criadoEm = new Date().toISOString();
+      d.atualizadoEm = null;
+      const reg = await salvarNovo(d);
+      estado.semBackup++;
+      limparForm();
+      const prox = formatarId(estado.equipe, reg.seq + 1);
+      $('#id-atual').textContent = prox;
+      atualizarCabecalho(prox);
+      atualizarAvisoBackup();
+      toast(`✓ Salvo ${reg.id} — próximo ID: ${prox}`);
+      window.scrollTo(0, 0);
+      $('#f-idAvaliando').focus({ preventScroll: true });
+    }
+  } catch (e) {
+    console.error(e);
+    await modal({ titulo: 'ERRO — registro NÃO foi salvo', tipo: 'erro', texto: msgErro(e) + '\n\nOs dados continuam no formulário. Tente novamente.', botoes: [{ txt: 'OK', valor: true, cls: 'btn-pri' }] });
+  } finally {
+    estado.salvando = false;
+    $('#btn-salvar').disabled = false;
+  }
+}
+
+function focarPrimeiroProblema(porCampo, d){
+  let alvo = null;
+  if (!d.idAvaliando || porCampo.idAvaliando) alvo = $('#f-idAvaliando');
+  else if (!d.sexo) alvo = $('#f-sexo-M');
+  else if (!d.dataHora) alvo = $('#f-dataHora');
+  else if (!d.dataNasc) alvo = $('#f-dataNasc');
+  else {
+    const primeiro = $$('#form .campo[data-campo]').find(el => porCampo[el.dataset.campo]);
+    if (primeiro) alvo = primeiro.querySelector('input');
+  }
+  if (alvo) { alvo.scrollIntoView({ block: 'center' }); alvo.focus({ preventScroll: true }); }
+}
+
+/* ---------------- Edição ---------------- */
+async function entrarEdicao(id){
+  const reg = await lerUm('medidas', id);
+  if (!reg) { toast('Registro não encontrado.', true); return; }
+  salvarRascunho(); // guarda o que estava sendo digitado, se houver
+  estado.editandoId = id;
+  preencherForm(reg);
+  $('#edicao-id').textContent = id;
+  $('#banner-edicao').hidden = false;
+  $('#id-rotulo').textContent = 'ID (não muda na edição)';
+  $('#id-atual').textContent = id;
+  $('#btn-salvar').textContent = 'Salvar alterações';
+  checarDuplicado();
+  mostrarTela('coleta');
+  window.scrollTo(0, 0);
+}
+
+async function sairEdicao(restaurar = true){
+  estado.editandoId = null;
+  $('#banner-edicao').hidden = true;
+  $('#id-rotulo').textContent = 'ID desta avaliação';
+  $('#btn-salvar').textContent = 'Salvar avaliação';
+  form.reset();
+  if (!(restaurar && restaurarRascunho())) { form.elements.dataHora.value = agoraLocal(); atualizarTela(); }
+  else form.elements.dataHora.value = form.elements.dataHora.value || agoraLocal();
+  await checarDuplicado();
+  const prox = await proximoId();
+  $('#id-atual').textContent = prox;
+  atualizarCabecalho(prox);
+}
+
+/* ---------------- Telas ---------------- */
+function mostrarTela(nome){
+  if (nome !== 'setup' && !estado.equipe) nome = 'setup';
+  for (const s of $$('.tela')) s.hidden = s.id !== 'tela-' + nome;
+  for (const b of $$('nav button')) b.setAttribute('aria-current', b.dataset.tela === nome ? 'page' : 'false');
+  if (nome === 'registros') carregarLista();
+  if (nome === 'setup') preencherSetup();
+}
+
+function atualizarCabecalho(prox){
+  $('#hdr-equipe').textContent = estado.equipe ? `${estado.equipe} · próx. ${prox ? prox.split('-')[1] : ''}` : 'sem equipe';
+}
+
+function atualizarAvisoBackup(){
+  const el = $('#aviso-backup');
+  if (estado.semBackup >= 50) {
+    el.hidden = false;
+    el.innerHTML = `💾 <b>${estado.semBackup} registros sem backup.</b> Vá em Registros → Exportar (CSV e JSON).`;
+  } else el.hidden = true;
+}
+
+/* ---------------- Setup ---------------- */
+function preencherSetup(){
+  $('#s-equipe').value = estado.equipe;
+  $('#s-avaliador').value = estado.avaliador;
+  $('#btn-iniciar').textContent = estado.equipe ? 'Salvar configuração' : 'Iniciar coleta';
+  $('#setup-erro').hidden = true;
+  mostrarInfoArmazenamento();
+}
+
+async function aoSalvarSetup(ev){
+  ev.preventDefault();
+  const eq = $('#s-equipe').value.trim().toUpperCase();
+  const av = $('#s-avaliador').value.trim();
+  const erro = $('#setup-erro');
+  if (!REGEX_EQUIPE.test(eq)) { erro.hidden = false; erro.textContent = 'Código inválido. Use EQ + 2 dígitos, ex.: EQ01.'; $('#s-equipe').focus(); return; }
+
+  // Troca de código com registros existentes: dupla confirmação
+  if (estado.equipe && eq !== estado.equipe) {
+    const qtd = await tx(['medidas'], 'readonly', (t, s) => { const r = t.objectStore('medidas').index('equipe').count(estado.equipe); r.onsuccess = () => s.valor = r.result; });
+    if (qtd > 0) {
+      const ok1 = await modal({ titulo: 'Trocar código da equipe?', tipo: 'warn',
+        texto: `Este aparelho já tem ${qtd} registros de ${estado.equipe}. Eles NÃO serão apagados, mas os próximos IDs passarão a ser ${eq}-XXXX.\n\nSó faça isso se ${eq} não estiver sendo usado em outro aparelho.`,
+        botoes: [{ txt: 'Cancelar', valor: false }, { txt: 'Continuar', valor: true, cls: 'btn-perigo' }] });
+      if (!ok1) return;
+      const digitado = await modal({ titulo: 'Confirmação final', tipo: 'warn', texto: `Digite ${eq} para confirmar:`, entrada: true,
+        botoes: [{ txt: 'Cancelar', valor: false }, { txt: 'Confirmar troca', valor: 'entrada', cls: 'btn-perigo' }] });
+      if (!digitado || String(digitado).trim().toUpperCase() !== eq) { toast('Troca cancelada.', true); return; }
+    }
+  }
+
+  try {
+    await gravarMeta('config', { equipe: eq, avaliador: av });
+  } catch (e) {
+    erro.hidden = false; erro.textContent = 'Não foi possível salvar: ' + msgErro(e); return;
+  }
+  lsSet(LS.equipe, eq); lsSet(LS.avaliador, av);
+  estado.equipe = eq; estado.avaliador = av;
+  await sincronizarContador(eq);
+  const prox = await proximoId();
+  if (!estado.editandoId) $('#id-atual').textContent = prox;
+  atualizarCabecalho(prox);
+  toast('✓ Configuração salva');
+  mostrarTela('coleta');
+  if (!form.elements.dataHora.value) form.elements.dataHora.value = agoraLocal();
+  $('#f-idAvaliando').focus();
+}
+
+async function mostrarInfoArmazenamento(){
+  const el = $('#info-armazenamento');
+  let html = '';
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const { usage, quota } = await navigator.storage.estimate();
+      html += `<p>Usado: <b>${(usage / 1048576).toFixed(1)} MB</b> de ~${(quota / 1048576).toFixed(0)} MB disponíveis.</p>`;
+    }
+  } catch (e) {}
+  html += estado.persistente === true
+    ? '<p>✓ Armazenamento <b>persistente</b> (o navegador não apaga sozinho).</p>'
+    : '<p>⚠ Armazenamento <b>não persistente</b>: o navegador pode apagar dados se faltar espaço. Faça backup diário.</p>';
+  html += `<p>${await statusOffline()}</p>`;
+  html += `<p>Modo: <b>${INSTALADO ? 'app instalado' : 'navegador'}</b> · ${IS_IOS ? 'iOS' : 'Android/outro'} · versão ${APP_VERSAO}</p>`;
+  html += IS_IOS
+    ? '<p class="dica">No iPhone, os dados do app instalado e os do Safari são SEPARADOS. Use sempre o ícone. Apagar o app da tela de início apaga os dados.</p>'
+    : '<p class="dica">Não limpe os dados do Chrome/site. Desinstalar o app pode apagar os dados — exporte antes.</p>';
+  el.innerHTML = html;
+}
+
+/* ---------------- Lista de registros ---------------- */
+async function carregarLista(){
+  try {
+    estado.registros = (await lerTodos('medidas')).sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || '') || b.id.localeCompare(a.id));
+  } catch (e) { toast('Erro ao ler registros: ' + msgErro(e), true); return; }
+  estado.limiteLista = 100;
+  $('#r-total').textContent = estado.registros.length;
+  $('#r-equipe').textContent = estado.registros.filter(r => r.equipe === estado.equipe).length;
+  $('#r-sembackup').textContent = estado.semBackup;
+  const ult = lsGet(LS.backup);
+  $('#r-ultimo-backup').textContent = ult ? `Último backup exportado: ${new Date(ult).toLocaleString('pt-BR')}` : 'Nenhum backup exportado ainda neste aparelho.';
+  renderLista();
+}
+
+function renderLista(){
+  const termo = $('#busca').value.trim().toUpperCase();
+  const filtrados = termo ? estado.registros.filter(r => r.id.includes(termo) || String(r.idAvaliando || '').includes(termo)) : estado.registros;
+  const visiveis = filtrados.slice(0, estado.limiteLista);
+  $('#lista-info').textContent = `${filtrados.length} registro(s)` + (filtrados.length > visiveis.length ? ` — mostrando ${visiveis.length}` : '');
+  $('#btn-mais').hidden = filtrados.length <= visiveis.length;
+  $('#lista').innerHTML = visiveis.map(r => `
+    <div class="cartao">
+      <div class="cartao-top"><strong>${esc(r.id)}</strong>
+        <span>${esc((r.dataHora || '').replace('T', ' '))} ${r.alertas && r.alertas.length ? '<span class="flag" title="' + esc(r.alertas.join(' | ')) + '">⚠ ' + r.alertas.length + '</span>' : ''}</span></div>
+      <div class="cartao-info">Avaliando <b>${esc(r.idAvaliando || '—')}</b> · ${esc(r.sexo)} · ${fmt(r.idade, 1)} anos · ${fmt(r.peso)} kg · ${fmt(r.estatura)} cm · IMC ${fmt(r.imc)}${r.importadoEm ? ' · importado' : ''}</div>
+      <div class="btn-linha">
+        <button type="button" class="btn" data-editar="${esc(r.id)}">Editar</button>
+        <button type="button" class="btn btn-perigo" data-excluir="${esc(r.id)}">Excluir</button>
+      </div>
+    </div>`).join('');
+}
+
+async function aoExcluir(id){
+  const ok = await modal({ titulo: `Excluir ${id}?`, tipo: 'erro',
+    texto: 'O registro sai da lista e do CSV. Uma cópia fica na lixeira (vai no backup JSON). O número deste ID não será reutilizado.',
+    botoes: [{ txt: 'Cancelar', valor: false, cls: 'btn-pri' }, { txt: 'Excluir', valor: true, cls: 'btn-perigo' }] });
+  if (!ok) return;
+  try {
+    await excluirRegistro(id);
+    if (estado.editandoId === id) await sairEdicao();
+    toast(`Registro ${id} excluído.`);
+    carregarLista();
+  } catch (e) { modal({ titulo: 'Erro ao excluir', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); }
+}
+
+/* ---------------- Exportação ---------------- */
+function baixar(nome, conteudo, tipo){
+  const blob = new Blob([conteudo], { type: tipo });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nome;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 5000);
+}
+
+function csvCampo(v, k){
+  if (v === null || v === undefined) return '';
+  let s;
+  if (Array.isArray(v)) s = v.join(' | ');
+  else if (typeof v === 'number') s = String(v).replace('.', ','); // decimal com vírgula (Excel pt-BR)
+  else s = String(v);
+  if (k === 'dataHora') s = s.replace('T', ' ');
+  // Evita que o Excel interprete texto livre como fórmula
+  if (COLS_TEXTO_LIVRE.has(k) && /^[=+\-@]/.test(s)) s = "'" + s;
+  if (/[;"\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+async function marcarBackup(){
+  const agora = new Date().toISOString();
+  lsSet(LS.backup, agora);
+  try { await gravarMeta('ultimoBackup', agora); } catch (e) {}
+  estado.semBackup = 0;
+  atualizarAvisoBackup();
+  $('#r-sembackup').textContent = 0;
+  $('#r-ultimo-backup').textContent = `Último backup exportado: ${new Date(agora).toLocaleString('pt-BR')}`;
+}
+
+// Entrega o arquivo: no iPhone pela folha "Compartilhar" (Salvar em Arquivos, e-mail, WhatsApp);
+// no Android, salvar em Downloads e, se suportado, também compartilhar.
+function entregarArquivo(nome, conteudo, tipo, resumo){
+  let arquivo = null, podeShare = false;
+  try {
+    arquivo = new File([conteudo], nome, { type: tipo });
+    podeShare = !!(navigator.canShare && navigator.canShare({ files: [arquivo] }));
+  } catch (e) { podeShare = false; }
+  const botoes = [];
+  if (podeShare) botoes.push({ txt: IS_IOS ? 'Salvar / Compartilhar' : 'Compartilhar…', cls: 'btn-pri', valor: true, acao: () => {
+    navigator.share({ files: [arquivo], title: nome })
+      .then(() => { marcarBackup(); toast('✓ Arquivo salvo/enviado'); })
+      .catch(e => { if (e.name !== 'AbortError') modal({ titulo: 'Falha ao compartilhar', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); });
+  }});
+  if (!IS_IOS || !podeShare) botoes.push({ txt: 'Salvar em Downloads', cls: podeShare ? '' : 'btn-pri', valor: true, acao: () => {
+    baixar(nome, conteudo, tipo); marcarBackup(); toast('✓ Salvo — confira a pasta Downloads');
+  }});
+  botoes.push({ txt: 'Fechar', valor: false });
+  return modal({ titulo: 'Arquivo pronto', texto: `${nome}\n${resumo}\n\nGuarde uma cópia FORA do aparelho (Drive, e-mail, computador).`, botoes });
+}
+
+async function exportarCSV(){
+  try {
+    const regs = (await lerTodos('medidas')).sort((a, b) => a.id.localeCompare(b.id));
+    if (!regs.length) { toast('Nenhum registro para exportar.', true); return; }
+    const linhas = [COLUNAS.map(c => c[1]).join(';')];
+    for (const r of regs) linhas.push(COLUNAS.map(([k]) => csvCampo(r[k], k)).join(';'));
+    await entregarArquivo(`antropometria_${estado.equipe}_${carimbo()}.csv`, '\uFEFF' + linhas.join('\r\n'), 'text/csv', `${regs.length} registros (CSV para Excel)`);
+  } catch (e) { modal({ titulo: 'Erro ao exportar', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); }
+}
+
+async function exportarJSON(){
+  try {
+    const [medidas, lixeira, meta] = await Promise.all([lerTodos('medidas'), lerTodos('lixeira'), lerTodos('meta')]);
+    const pacote = { app: 'antropometria', versaoApp: APP_VERSAO, exportadoEm: new Date().toISOString(), equipe: estado.equipe, medidas, lixeira, meta };
+    await entregarArquivo(`antropometria_${estado.equipe}_${carimbo()}.json`, JSON.stringify(pacote, null, 1), 'application/json', `${medidas.length} registros (backup completo)`);
+  } catch (e) { modal({ titulo: 'Erro ao exportar', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); }
+}
+
+/* ---------------- Importação / merge ---------------- */
+function parseCSV(texto){
+  texto = texto.replace(/^\uFEFF/, '');
+  const fimLinha1 = texto.search(/\r?\n/);
+  const primeira = fimLinha1 >= 0 ? texto.slice(0, fimLinha1) : texto;
+  const sep = primeira.split(';').length >= primeira.split(',').length ? ';' : ',';
+  const linhas = []; let linha = [], campo = '', aspas = false;
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
+    if (aspas) {
+      if (c === '"') { if (texto[i + 1] === '"') { campo += '"'; i++; } else aspas = false; }
+      else campo += c;
+    } else if (c === '"') aspas = true;
+    else if (c === sep) { linha.push(campo); campo = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && texto[i + 1] === '\n') i++;
+      linha.push(campo); campo = '';
+      if (linha.some(x => x !== '')) linhas.push(linha);
+      linha = [];
+    } else campo += c;
+  }
+  linha.push(campo);
+  if (linha.some(x => x !== '')) linhas.push(linha);
+  return linhas;
+}
+
+// Aceita AAAA-MM-DD ou DD/MM/AAAA (caso o CSV tenha sido salvo de novo pelo Excel)
+function normData(s){
+  s = String(s || '').trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s); if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}`;
+  return s;
+}
+function normDataHora(s){
+  s = String(s || '').trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})/.exec(s); if (m) return `${m[1]}-${m[2]}-${m[3]}T${pad(m[4])}:${m[5]}`;
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T]?(\d{1,2})?:?(\d{2})?/.exec(s); if (m) return `${m[3]}-${pad(m[2])}-${pad(m[1])}T${pad(m[4] || 0)}:${m[5] || '00'}`;
+  return s;
+}
+
+function normalizarRegistro(o){
+  const r = {};
+  for (const [k] of COLUNAS) if (o[k] !== undefined) r[k] = o[k];
+  r.id = String(r.id || '').trim().toUpperCase();
+  r.idAvaliando = String(r.idAvaliando ?? '').trim();
+  const m = /^([A-Z0-9]{2,10})-(\d{4,})$/.exec(r.id);
+  if (!m) return null;
+  r.equipe = m[1]; r.seq = parseInt(m[2], 10);
+  for (const k of COLS_NUM) {
+    if (k === 'seq') continue;
+    const v = r[k];
+    if (v === '' || v === null || v === undefined) r[k] = null;
+    else if (typeof v !== 'number') { const n = parseFloat(String(v).replace(',', '.')); r[k] = isFinite(n) ? n : null; }
+  }
+  for (const k of COLS_TEXTO_LIVRE) if (typeof r[k] === 'string' && /^'[=+\-@]/.test(r[k])) r[k] = r[k].slice(1);
+  if (typeof r.alertas === 'string') r.alertas = r.alertas ? r.alertas.split(' | ') : [];
+  if (!Array.isArray(r.alertas)) r.alertas = [];
+  r.dataNasc = normData(r.dataNasc);
+  r.dataHora = normDataHora(r.dataHora);
+  r.importadoEm = r.importadoEm || new Date().toISOString();
+  return r;
+}
+
+function lerArquivoTexto(arq){
+  return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsText(arq, 'utf-8'); });
+}
+
+// Mesmos dados essenciais = duplicata inofensiva; diferentes = CONFLITO (provável código repetido entre aparelhos)
+function mesmoConteudo(a, b){
+  return ['idAvaliando', 'dataHora', 'dataNasc', 'sexo', 'peso', 'estatura'].every(k => (a[k] ?? null) === (b[k] ?? null));
+}
+
+async function importarArquivo(arq){
+  let brutos = [];
+  try {
+    const texto = await lerArquivoTexto(arq);
+    if (/\.json$/i.test(arq.name) || texto.trim().startsWith('{')) {
+      const j = JSON.parse(texto);
+      brutos = Array.isArray(j) ? j : (j.medidas || []);
+    } else {
+      const linhas = parseCSV(texto);
+      if (linhas.length < 2) throw new Error('CSV vazio.');
+      const mapa = Object.fromEntries(COLUNAS.map(([k, h]) => [h, k]));
+      const cab = linhas[0].map(h => mapa[h.trim()] || null);
+      if (!cab.includes('id')) throw new Error('CSV sem a coluna "id". Use um arquivo exportado por este app.');
+      brutos = linhas.slice(1).map(l => { const o = {}; cab.forEach((k, i) => { if (k) o[k] = l[i] ?? ''; }); return o; });
+    }
+  } catch (e) {
+    modal({ titulo: 'Arquivo inválido', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); return;
+  }
+
+  const validos = []; let invalidos = 0;
+  for (const b of brutos) { const r = normalizarRegistro(b); if (r) validos.push(r); else invalidos++; }
+
+  let rel;
+  try {
+    rel = await tx(['medidas'], 'readwrite', (t, s) => {
+      const st = t.objectStore('medidas');
+      const r = { novos: 0, duplicados: 0, conflitos: [], avaliandoRepetido: [] };
+      s.valor = r;
+      for (const reg of validos) {
+        const g = st.get(reg.id);
+        g.onsuccess = () => {
+          if (g.result) { if (mesmoConteudo(g.result, reg)) r.duplicados++; else r.conflitos.push(reg.id); }
+          else {
+            st.add(reg); r.novos++;
+            // Mesmo adolescente em outro registro (ex.: medido por duas equipes)
+            if (reg.idAvaliando) {
+              const ga = st.index('idAvaliando').getAllKeys(reg.idAvaliando);
+              ga.onsuccess = () => { const outros = ga.result.filter(k => k !== reg.id); if (outros.length) r.avaliandoRepetido.push(`${reg.idAvaliando} (${reg.id} × ${outros.join(', ')})`); };
+            }
+          }
+        };
+      }
+    });
+  } catch (e) {
+    modal({ titulo: 'Importação falhou — nada foi gravado', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); return;
+  }
+
+  await sincronizarContador(estado.equipe); // se importou IDs desta equipe, o contador avança
+  const prox = await proximoId();
+  if (!estado.editandoId) $('#id-atual').textContent = prox;
+  atualizarCabecalho(prox);
+
+  const lista = [`Novos registros: ${rel.novos}`, `Já existentes (ignorados): ${rel.duplicados}`, `Linhas inválidas (sem ID válido): ${invalidos}`];
+  if (rel.avaliandoRepetido.length) lista.push(`⚠ Avaliandos com mais de uma avaliação após o merge: ${rel.avaliandoRepetido.length}: ${rel.avaliandoRepetido.slice(0, 20).join('; ')}${rel.avaliandoRepetido.length > 20 ? '…' : ''}`);
+  if (rel.conflitos.length) lista.push(`⚠ CONFLITOS (mesmo ID, dados diferentes — NÃO importados): ${rel.conflitos.length}: ${rel.conflitos.slice(0, 30).join(', ')}${rel.conflitos.length > 30 ? '…' : ''}. Provável código de equipe repetido em dois aparelhos.`);
+  await modal({ titulo: 'Importação concluída', tipo: rel.conflitos.length ? 'warn' : 'info', lista, botoes: [{ txt: 'OK', valor: true, cls: 'btn-pri' }] });
+  carregarLista();
+}
+
+/* ---------------- Modal / toast / bloqueio ---------------- */
+function modal({ titulo, texto = '', lista = null, tipo = 'info', botoes, entrada = false }){
+  return new Promise(res => {
+    const m = $('#modal'), cx = m.querySelector('.caixa');
+    cx.className = 'caixa ' + tipo;
+    cx.innerHTML = `<h3>${esc(titulo)}</h3>` +
+      (texto ? `<p style="white-space:pre-line">${esc(texto)}</p>` : '') +
+      (lista ? `<ul>${lista.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '') +
+      (entrada ? '<input type="text" id="modal-entrada" autocomplete="off">' : '') +
+      `<div class="btn-linha">${botoes.map((b, i) => `<button type="button" class="btn ${b.cls || ''}" data-i="${i}">${esc(b.txt)}</button>`).join('')}</div>`;
+    m.hidden = false;
+    const fechar = v => { m.hidden = true; cx.innerHTML = ''; document.removeEventListener('keydown', esc_); res(v); };
+    const esc_ = e => { if (e.key === 'Escape') fechar(false); };
+    document.addEventListener('keydown', esc_);
+    cx.querySelectorAll('button').forEach(btn => btn.onclick = () => {
+      const b = botoes[+btn.dataset.i];
+      // "acao" roda DENTRO do toque do usuário: o iOS exige isso para abrir a folha de compartilhar
+      if (b.acao) { try { b.acao(); } catch (e) { console.error(e); } }
+      fechar(b.valor === 'entrada' ? cx.querySelector('#modal-entrada').value : b.valor);
+    });
+    (cx.querySelector('#modal-entrada') || cx.querySelector('.btn-pri, .btn-ok') || cx.querySelector('button')).focus();
+  });
+}
+
+let toastTimer = null;
+function toast(msg, erro = false){
+  const t = $('#toast');
+  t.textContent = msg; t.className = erro ? 'erro' : ''; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.hidden = true, 4500);
+}
+
+function mostrarBloqueio(e){
+  $('#bloqueio-detalhe').textContent = msgErro(e);
+  $('#bloqueio-url').textContent = location.href;
+  $('#bloqueio').hidden = false;
+}
+
+/* ---------------- PWA: offline e instalação ---------------- */
+// O service worker (sw.js) guarda o app no aparelho para abrir sem internet.
+// Só funciona quando servido por https (GitHub Pages); via file:// é ignorado.
+function registrarServiceWorker(){
+  if (!('serviceWorker' in navigator) || !HOSPEDADO) return;
+  const tinhaControlador = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const avisar = sw => {
+      $('#aviso-atualizacao').hidden = false;
+      $('#btn-atualizar').onclick = () => { salvarRascunho(); sw.postMessage('ativar'); };
+    };
+    if (reg.waiting && tinhaControlador) avisar(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      if (sw) sw.addEventListener('statechange', () => { if (sw.state === 'installed' && navigator.serviceWorker.controller) avisar(sw); });
+    });
+  }).catch(e => console.error('Service worker:', e));
+  // Recarrega só depois que o usuário pediu a atualização (nunca no meio de uma coleta)
+  let recarregando = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!tinhaControlador || recarregando) return;
+    recarregando = true; location.reload();
+  });
+}
+
+async function statusOffline(){
+  if (!HOSPEDADO) return '⚠ Aberto como arquivo local: instalação/offline automático não se aplica.';
+  if (!('serviceWorker' in navigator)) return '⛔ Este navegador não suporta uso offline. Use Chrome (Android) ou Safari (iPhone).';
+  try {
+    const temCache = (await caches.keys()).some(k => k.startsWith('antropo-'));
+    if (navigator.serviceWorker.controller && temCache) return '✓ <b>Pronto para uso offline.</b>';
+  } catch (e) {}
+  return '⚠ <b>Ainda NÃO está pronto para offline.</b> Mantenha a internet ligada e reabra o app.';
+}
+
+// Android/Chrome: botão "Instalar"
+let promptInstalacao = null;
+function configurarInstalacao(){
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault(); promptInstalacao = e;
+    if (!INSTALADO) $('#aviso-instalar').hidden = false;
+  });
+  window.addEventListener('appinstalled', () => { $('#aviso-instalar').hidden = true; toast('✓ App instalado. Abra pelo ícone.'); });
+  $('#btn-instalar').onclick = async () => {
+    if (!promptInstalacao) return;
+    promptInstalacao.prompt();
+    try { await promptInstalacao.userChoice; } catch (e) {}
+    promptInstalacao = null; $('#aviso-instalar').hidden = true;
+  };
+}
+
+/* ---------------- Tema ---------------- */
+function aplicarTema(t){
+  document.documentElement.dataset.tema = t;
+  $('#btn-tema').textContent = t === 'escuro' ? '☀' : '☾';
+  document.querySelector('meta[name=theme-color]').content = t === 'escuro' ? '#121417' : '#0b5394';
+}
+
+/* ---------------- Inicialização ---------------- */
+async function iniciar(){
+  aplicarTema(lsGet(LS.tema) || 'claro');
+  gerarCamposNumericos();
+
+  // Eventos
+  form.addEventListener('submit', aoSalvar);
+  form.addEventListener('input', () => { atualizarTela(); salvarRascunho(); });
+  form.addEventListener('change', e => { atualizarTela(); salvarRascunho(); if (e.target.name === 'idAvaliando') checarDuplicado(); });
+  // ID do avaliando: aceita só dígitos (alguns teclados numéricos deixam passar ponto/vírgula)
+  $('#f-idAvaliando').addEventListener('input', e => { const v = e.target.value.replace(/\D/g, ''); if (v !== e.target.value) e.target.value = v; });
+  // Enter em campo de texto vai para o próximo campo em vez de enviar o formulário
+  form.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.target.tagName === 'TEXTAREA' || e.target.type === 'submit') return;
+    e.preventDefault();
+    const campos = Array.from(form.querySelectorAll('input[type=text],input[type=date],input[type=datetime-local],textarea'));
+    const i = campos.indexOf(e.target);
+    if (i >= 0 && campos[i + 1]) campos[i + 1].focus();
+  });
+  $('#btn-limpar').onclick = async () => {
+    if (formTemDados() && !(await modal({ titulo: 'Limpar formulário?', tipo: 'warn', texto: 'Tudo o que foi digitado e não salvo será apagado.', botoes: [{ txt: 'Cancelar', valor: false, cls: 'btn-pri' }, { txt: 'Limpar', valor: true, cls: 'btn-perigo' }] }))) return;
+    if (estado.editandoId) { lsDel(LS.rascunho); await sairEdicao(false); } else limparForm();
+    $('#f-idAvaliando').focus();
+  };
+  $('#btn-cancelar-edicao').onclick = () => sairEdicao();
+  $('#form-setup').addEventListener('submit', aoSalvarSetup);
+  $('#s-equipe').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase(); });
+  for (const b of $$('nav button')) b.onclick = () => mostrarTela(b.dataset.tela);
+  $('#btn-tema').onclick = () => { const t = document.documentElement.dataset.tema === 'escuro' ? 'claro' : 'escuro'; lsSet(LS.tema, t); aplicarTema(t); };
+  $('#busca').addEventListener('input', () => { estado.limiteLista = 100; renderLista(); });
+  $('#btn-mais').onclick = () => { estado.limiteLista += 100; renderLista(); };
+  $('#lista').addEventListener('click', e => {
+    const ed = e.target.closest('[data-editar]'), ex = e.target.closest('[data-excluir]');
+    if (ed) entrarEdicao(ed.dataset.editar);
+    if (ex) aoExcluir(ex.dataset.excluir);
+  });
+  $('#btn-csv').onclick = exportarCSV;
+  $('#btn-json').onclick = exportarJSON;
+  $('#btn-importar').onclick = () => $('#arquivo-import').click();
+  $('#arquivo-import').onchange = e => { const a = e.target.files[0]; e.target.value = ''; if (a) importarArquivo(a); };
+  window.addEventListener('beforeunload', e => { if (formTemDados()) { salvarRascunho(); e.preventDefault(); e.returnValue = ''; } });
+  // iOS não dispara beforeunload: salva rascunho ao sair/trocar de app
+  window.addEventListener('pagehide', salvarRascunho);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') salvarRascunho(); });
+  for (const inp of $$('.seg input')) {
+    inp.addEventListener('focus', () => inp.parentElement.classList.add('focado'));
+    inp.addEventListener('blur', () => inp.parentElement.classList.remove('focado'));
+  }
+  $('#btn-ios-continuar').onclick = () => { $('#instalar-ios').hidden = true; try { sessionStorage.setItem('antropo_ios_ok', '1'); } catch (e) {} };
+  registrarServiceWorker();
+  configurarInstalacao();
+
+  // 1) Banco + autoteste de gravação. Se falhar, bloqueia a coleta.
+  try { db = await abrirDB(); await autoTeste(); }
+  catch (e) { console.error(e); mostrarBloqueio(e); return; }
+
+  // 2) Pede ao navegador para não apagar os dados sozinho
+  estado.persistente = await pedirPersistencia();
+  if (estado.persistente !== true && !(IS_IOS && INSTALADO)) {
+    const av = $('#aviso-armazenamento');
+    av.hidden = false;
+    av.innerHTML = '⚠ O navegador não garantiu armazenamento persistente. <b>Exporte o backup todo dia.</b>';
+  }
+  // iPhone no Safari (não instalado): risco real de perda → tela de instalação
+  let iosOk = false; try { iosOk = sessionStorage.getItem('antropo_ios_ok') === '1'; } catch (e) {}
+  if (IS_IOS && !INSTALADO && HOSPEDADO && !iosOk) $('#instalar-ios').hidden = false;
+  if (location.protocol === 'content:') {
+    const av = $('#aviso-armazenamento');
+    av.hidden = false;
+    av.innerHTML += '<br>⚠ Aberto via <code>content://</code> (app Arquivos). Prefira abrir digitando <code>file:///sdcard/Download/…</code> no Chrome, sempre do mesmo jeito.';
+  }
+
+  // 3) Configuração: localStorage, com recuperação a partir do IndexedDB se tiver sido apagado
+  try {
+    let eq = lsGet(LS.equipe), av = lsGet(LS.avaliador);
+    const cfg = await lerUm('meta', 'config');
+    if (!eq && cfg && cfg.valor && cfg.valor.equipe) { eq = cfg.valor.equipe; av = cfg.valor.avaliador || ''; lsSet(LS.equipe, eq); lsSet(LS.avaliador, av); }
+    estado.equipe = eq && REGEX_EQUIPE.test(eq) ? eq : '';
+    estado.avaliador = av || '';
+
+    const ultBackup = lsGet(LS.backup) || ((await lerUm('meta', 'ultimoBackup')) || {}).valor || '';
+    const todos = await lerTodos('medidas');
+    estado.semBackup = todos.filter(r => !r.importadoEm && (!ultBackup || (r.criadoEm || '') > ultBackup)).length;
+  } catch (e) { mostrarBloqueio(e); return; }
+
+  const restaurou = restaurarRascunho();
+  if (!form.elements.dataHora.value) form.elements.dataHora.value = agoraLocal();
+  atualizarTela();
+
+  if (estado.equipe) {
+    await sincronizarContador(estado.equipe);
+    const prox = await proximoId();
+    $('#id-atual').textContent = prox;
+    atualizarCabecalho(prox);
+    atualizarAvisoBackup();
+    mostrarTela('coleta');
+    if (restaurou) { toast('Rascunho não salvo foi restaurado.'); checarDuplicado(); }
+  } else {
+    atualizarCabecalho();
+    mostrarTela('setup');
+    $('#s-equipe').focus();
+  }
+}
+
+iniciar();
+</script>
+</body>
+</html>
