@@ -11,9 +11,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Antropometria">
+<meta name="apple-mobile-web-app-title" content="Atitude">
 <meta name="format-detection" content="telephone=no">
-<title>Antropometria — Coleta offline</title>
+<title>Atitude</title>
 <style>
 :root{
   --bg:#ffffff; --fg:#111; --muted:#4a5560; --card:#f2f4f7; --borda:#7d8893;
@@ -169,7 +169,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
   <ol>
     <li>Toque em <b>Compartilhar</b> <span aria-hidden="true">⬆︎</span> (barra do Safari).</li>
     <li>Escolha <b>Adicionar à Tela de Início</b> → <b>Adicionar</b>.</li>
-    <li>Feche o Safari e abra pelo ícone <b>Antropometria</b>.</li>
+    <li>Feche o Safari e abra pelo ícone <b>Atitude</b>.</li>
   </ol>
   <p class="dica">Faça isso no <b>Safari</b>. Em outros navegadores do iPhone a opção pode não aparecer.</p>
   <p><button type="button" id="btn-ios-continuar" class="btn">Continuar no Safari (só para teste)</button></p>
@@ -177,7 +177,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
 
 <header>
   <div class="hdr-linha">
-    <h1>Antropometria</h1>
+    <h1>Atitude</h1>
     <span id="hdr-equipe"></span>
     <button id="btn-tema" type="button" title="Alternar tema claro/escuro" aria-label="Alternar tema">☾</button>
   </div>
@@ -382,7 +382,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
    Prioridades: 1) não perder dados  2) IDs não colidirem  3) offline
    ========================================================================= */
 
-const APP_VERSAO = '1.4.0'; // manter igual a VERSAO em sw.js
+const APP_VERSAO = '1.4.1'; // manter igual a VERSAO em sw.js
 const DB_NOME = 'antropometria';
 const DB_VERSAO = 2; // v2: índice idAvaliando
 const REGEX_AVALIANDO = /^\d{1,12}$/;

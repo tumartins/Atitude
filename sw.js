@@ -2,7 +2,7 @@
    AO PUBLICAR NOVA VERSÃO: mude VERSAO aqui (igual a APP_VERSAO no index.html).
    É a mudança deste arquivo que faz os aparelhos baixarem a atualização.
    Os DADOS ficam no IndexedDB e não são afetados por atualizações. */
-const VERSAO = 'antropo-1.4.0';
+const VERSAO = 'antropo-1.4.1';
 const ARQUIVOS = [
   './',
   './index.html',
