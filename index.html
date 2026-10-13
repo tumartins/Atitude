@@ -102,7 +102,12 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
 /* Setup */
 .setup label{display:block;font-weight:700;margin:14px 0 4px}
 .setup input{text-transform:uppercase}
-#s-avaliador{text-transform:none}
+#s-avaliador,#l-senha{text-transform:none}
+#l-login{background:var(--card)}
+.status-envio{display:block;width:100%;text-align:left;font:inherit;font-size:15px;font-weight:700;padding:8px 12px;border-radius:10px;border:2px solid var(--borda);background:var(--card);color:var(--fg);margin:0 0 10px;cursor:pointer}
+.status-envio.ok{border-color:var(--ok);color:var(--ok)}
+.status-envio.warn{border-color:var(--warn-borda);background:var(--warn-bg);color:var(--warn-fg)}
+.status-envio.erro{border-color:var(--err-borda);background:var(--err-bg);color:var(--err-fg)}
 .dica{font-size:15px;color:var(--muted);margin:4px 0}
 
 /* Lista de registros */
@@ -212,6 +217,26 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
       <div id="setup-erro" class="alerta erro" hidden></div>
       <p><button type="submit" class="btn btn-pri btn-grande" id="btn-iniciar">Iniciar coleta</button></p>
     </form>
+    <h2>Envio automático para o Drive</h2>
+    <div class="alerta info">
+      <p id="envio-explica">Com login feito, os registros deste aparelho são enviados sozinhos para o Drive da pesquisa sempre que o app estiver aberto e com internet. Os dados continuam também no aparelho.</p>
+      <form id="form-login" novalidate autocomplete="off">
+        <label for="l-login">Login (código do aparelho)</label>
+        <input id="l-login" type="text" readonly>
+        <label for="l-senha">Senha</label>
+        <input id="l-senha" type="password" autocomplete="current-password" enterkeyhint="go">
+        <div id="login-erro" class="alerta erro" hidden></div>
+        <p><button type="submit" id="btn-entrar" class="btn btn-pri btn-grande">Entrar</button></p>
+      </form>
+      <div id="envio-logado" hidden>
+        <p>✓ Conectado como <b id="envio-login"></b>.</p>
+        <p id="envio-detalhe" class="dica"></p>
+        <div class="btn-linha">
+          <button type="button" id="btn-enviar-agora" class="btn btn-pri">Enviar agora</button>
+          <button type="button" id="btn-sair" class="btn">Sair</button>
+        </div>
+      </div>
+    </div>
     <h2>Armazenamento</h2>
     <div id="info-armazenamento" class="alerta info"><p>Verificando…</p></div>
   </section>
@@ -224,6 +249,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
     </div>
     <div class="id-box"><span id="id-rotulo">ID desta avaliação</span><strong id="id-atual">—</strong></div>
     <p class="lgpd-mini">🔒 Anônimo: não registre o nome do adolescente em nenhum campo.</p>
+    <button type="button" class="status-envio" data-status-envio hidden></button>
     <div id="aviso-backup" class="alerta warn" hidden></div>
 
     <form id="form" novalidate autocomplete="off">
@@ -321,6 +347,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
     </div>
     <p class="dica" id="r-ultimo-backup"></p>
 
+    <button type="button" class="status-envio" data-status-envio hidden></button>
     <h3>Exportar / backup</h3>
     <p class="dica">Exporte <b>no fim de cada dia</b> e copie os arquivos para fora do tablet. O CSV abre no Excel; o JSON é o backup completo (inclui excluídos).</p>
     <div class="btn-linha">
@@ -353,10 +380,16 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
    Prioridades: 1) não perder dados  2) IDs não colidirem  3) offline
    ========================================================================= */
 
-const APP_VERSAO = '1.2.0'; // manter igual a VERSAO em sw.js
+const APP_VERSAO = '1.3.0'; // manter igual a VERSAO em sw.js
 const DB_NOME = 'antropometria';
 const DB_VERSAO = 2; // v2: índice idAvaliando
 const REGEX_AVALIANDO = /^\d{1,12}$/;
+const REGEX_DIA = /^\d{4}-\d{2}-\d{2}$/;
+// Endereço do script do Google (termina em /exec). Ver LEIAME, passo "Ligar o app ao script".
+// Não é segredo: sem login e senha válidos o script recusa qualquer envio.
+const URL_ENVIO = 'https://script.google.com/macros/s/AKfycbyb385r-jzZ9FbWIF1zyDX9Eppg94WUfEMaZBr5ZKGoS-GKOIXpTA63OT3YVZuhGc9m/exec';
+const INTERVALO_ENVIO_MS = 5 * 60 * 1000;   // tenta enviar a cada 5 min com o app aberto
+const ESPERA_APOS_SALVAR_MS = 15 * 1000;    // agrupa vários salvamentos num envio só
 // iPadOS se identifica como Mac; o toque denuncia
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const INSTALADO = window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
@@ -538,6 +571,22 @@ async function proximoId(){
   return formatarId(estado.equipe, (m ? m.valor : 0) + 1);
 }
 
+// Marca dias de coleta como "precisa reenviar ao Drive". Roda dentro da MESMA transação
+// que grava o registro: se o registro foi salvo, a pendência também foi.
+// Cada marcação incrementa a versão do dia; o envio só limpa a pendência se a versão não mudou.
+function marcarPendenteTx(meta, dias){
+  dias = [...new Set(dias.filter(d => REGEX_DIA.test(d || '')))];
+  if (!dias.length) return;
+  const r = meta.get('sync');
+  r.onsuccess = () => {
+    const v = (r.result && r.result.valor) || {};
+    v.pendentes = v.pendentes || {};
+    for (const d of dias) v.pendentes[d] = (v.pendentes[d] || 0) + 1;
+    meta.put({ chave: 'sync', valor: v });
+  };
+}
+const diaDe = dataHora => String(dataHora || '').slice(0, 10);
+
 // Grava registro novo e avança o contador NA MESMA transação (atômico).
 // Usa add(): nunca sobrescreve. Se o ID existir (ativo ou na lixeira), pula para o próximo número.
 function salvarNovo(dados){
@@ -555,7 +604,7 @@ function salvarNovo(dados){
           if (rl.result) { n++; return tentar(); }
           const reg = { ...dados, id, equipe: eq, seq: n };
           const ra = sm.add(reg);
-          ra.onsuccess = () => { meta.put({ chave: chaveContador(eq), valor: n }); s.valor = reg; };
+          ra.onsuccess = () => { meta.put({ chave: chaveContador(eq), valor: n }); marcarPendenteTx(meta, [diaDe(reg.dataHora)]); s.valor = reg; };
           ra.onerror = ev => {
             if (ra.error && ra.error.name === 'ConstraintError') { ev.preventDefault(); ev.stopPropagation(); n++; tentar(); }
           };
@@ -567,7 +616,7 @@ function salvarNovo(dados){
 }
 
 function atualizarRegistro(id, dados){
-  return tx(['medidas'], 'readwrite', (t, s) => {
+  return tx(['medidas', 'meta'], 'readwrite', (t, s) => {
     const st = t.objectStore('medidas');
     const r = st.get(id);
     r.onsuccess = () => {
@@ -576,19 +625,22 @@ function atualizarRegistro(id, dados){
       // ID, equipe, sequencial e data de criação nunca mudam na edição
       const reg = { ...orig, ...dados, id: orig.id, equipe: orig.equipe, seq: orig.seq, criadoEm: orig.criadoEm, atualizadoEm: new Date().toISOString() };
       st.put(reg);
+      // Se a data mudou, os dois dias precisam ser reenviados
+      if (orig.equipe === estado.equipe) marcarPendenteTx(t.objectStore('meta'), [diaDe(orig.dataHora), diaDe(reg.dataHora)]);
       s.valor = reg;
     };
   });
 }
 
 function excluirRegistro(id){
-  return tx(['medidas', 'lixeira'], 'readwrite', t => {
+  return tx(['medidas', 'lixeira', 'meta'], 'readwrite', t => {
     const st = t.objectStore('medidas');
     const r = st.get(id);
     r.onsuccess = () => {
       if (!r.result) return;
       t.objectStore('lixeira').put({ ...r.result, excluidoEm: new Date().toISOString() });
       st.delete(id);
+      if (r.result.equipe === estado.equipe) marcarPendenteTx(t.objectStore('meta'), [diaDe(r.result.dataHora)]);
     };
   });
 }
@@ -800,6 +852,7 @@ async function aoSalvar(ev){
   try {
     if (estado.editandoId) {
       const reg = await atualizarRegistro(estado.editandoId, d);
+      agendarEnvio();
       toast(`✓ Alterações salvas — ${reg.id}`);
       await sairEdicao(false);
       mostrarTela('registros');
@@ -808,6 +861,7 @@ async function aoSalvar(ev){
       d.criadoEm = new Date().toISOString();
       d.atualizadoEm = null;
       const reg = await salvarNovo(d);
+      agendarEnvio();
       estado.semBackup++;
       limparForm();
       const prox = formatarId(estado.equipe, reg.seq + 1);
@@ -899,6 +953,7 @@ function preencherSetup(){
   $('#btn-iniciar').textContent = estado.equipe ? 'Salvar configuração' : 'Iniciar coleta';
   $('#setup-erro').hidden = true;
   mostrarInfoArmazenamento();
+  mostrarLogin();
 }
 
 async function aoSalvarSetup(ev){
@@ -913,7 +968,7 @@ async function aoSalvarSetup(ev){
     const qtd = await tx(['medidas'], 'readonly', (t, s) => { const r = t.objectStore('medidas').index('equipe').count(estado.equipe); r.onsuccess = () => s.valor = r.result; });
     if (qtd > 0) {
       const ok1 = await modal({ titulo: 'Trocar código da equipe?', tipo: 'warn',
-        texto: `Este aparelho já tem ${qtd} registros de ${estado.equipe}. Eles NÃO serão apagados, mas os próximos IDs passarão a ser ${eq}-XXXX.\n\nSó faça isso se ${eq} não estiver sendo usado em outro aparelho.`,
+        texto: `Este aparelho já tem ${qtd} registros de ${estado.equipe}. Eles NÃO serão apagados, mas os próximos IDs passarão a ser ${eq}-XXXX.\n\nSó faça isso se ${eq} não estiver sendo usado em outro aparelho.\n\nO login do envio ao Drive será desfeito: será preciso entrar de novo com o login ${eq}. Envie os pendentes ANTES de trocar.`,
         botoes: [{ txt: 'Cancelar', valor: false }, { txt: 'Continuar', valor: true, cls: 'btn-perigo' }] });
       if (!ok1) return;
       const digitado = await modal({ titulo: 'Confirmação final', tipo: 'warn', texto: `Digite ${eq} para confirmar:`, entrada: true,
@@ -928,8 +983,11 @@ async function aoSalvarSetup(ev){
     erro.hidden = false; erro.textContent = 'Não foi possível salvar: ' + msgErro(e); return;
   }
   lsSet(LS.equipe, eq); lsSet(LS.avaliador, av);
+  const trocou = estado.equipe && estado.equipe !== eq;
   estado.equipe = eq; estado.avaliador = av;
+  if (trocou) { await sairEnvio(); await gravarMeta('sync', { pendentes: {} }); }
   await sincronizarContador(eq);
+  await inicializarPendencias();
   const prox = await proximoId();
   if (!estado.editandoId) $('#id-atual').textContent = prox;
   atualizarCabecalho(prox);
@@ -998,6 +1056,7 @@ async function aoExcluir(id){
   if (!ok) return;
   try {
     await excluirRegistro(id);
+    agendarEnvio();
     if (estado.editandoId === id) await sairEdicao();
     toast(`Registro ${id} excluído.`);
     carregarLista();
@@ -1058,13 +1117,18 @@ function entregarArquivo(nome, conteudo, tipo, resumo){
   return modal({ titulo: 'Arquivo pronto', texto: `${nome}\n${resumo}\n\nGuarde uma cópia FORA do aparelho (Drive, e-mail, computador).`, botoes });
 }
 
+// Mesmo formato no export manual e no envio ao Drive
+function gerarCSV(regs){
+  const linhas = [COLUNAS.map(c => c[1]).join(';')];
+  for (const r of regs) linhas.push(COLUNAS.map(([k]) => csvCampo(r[k], k)).join(';'));
+  return '\uFEFF' + linhas.join('\r\n');
+}
+
 async function exportarCSV(){
   try {
     const regs = (await lerTodos('medidas')).sort((a, b) => a.id.localeCompare(b.id));
     if (!regs.length) { toast('Nenhum registro para exportar.', true); return; }
-    const linhas = [COLUNAS.map(c => c[1]).join(';')];
-    for (const r of regs) linhas.push(COLUNAS.map(([k]) => csvCampo(r[k], k)).join(';'));
-    await entregarArquivo(`antropometria_${estado.equipe}_${carimbo()}.csv`, '\uFEFF' + linhas.join('\r\n'), 'text/csv', `${regs.length} registros (CSV para Excel)`);
+    await entregarArquivo(`antropometria_${estado.equipe}_${carimbo()}.csv`, gerarCSV(regs), 'text/csv', `${regs.length} registros (CSV para Excel)`);
   } catch (e) { modal({ titulo: 'Erro ao exportar', tipo: 'erro', texto: msgErro(e), botoes: [{ txt: 'OK', valor: true }] }); }
 }
 
@@ -1174,7 +1238,7 @@ async function importarArquivo(arq){
   try {
     rel = await tx(['medidas'], 'readwrite', (t, s) => {
       const st = t.objectStore('medidas');
-      const r = { novos: 0, duplicados: 0, conflitos: [], avaliandoRepetido: [] };
+      const r = { novos: 0, duplicados: 0, conflitos: [], avaliandoRepetido: [], diasProprios: [] };
       s.valor = r;
       for (const reg of validos) {
         const g = st.get(reg.id);
@@ -1182,6 +1246,7 @@ async function importarArquivo(arq){
           if (g.result) { if (mesmoConteudo(g.result, reg)) r.duplicados++; else r.conflitos.push(reg.id); }
           else {
             st.add(reg); r.novos++;
+            if (reg.equipe === estado.equipe) r.diasProprios.push(diaDe(reg.dataHora));
             // Mesmo adolescente em outro registro (ex.: medido por duas equipes)
             if (reg.idAvaliando) {
               const ga = st.index('idAvaliando').getAllKeys(reg.idAvaliando);
@@ -1196,6 +1261,7 @@ async function importarArquivo(arq){
   }
 
   await sincronizarContador(estado.equipe); // se importou IDs desta equipe, o contador avança
+  if (rel.diasProprios.length) { await tx(['meta'], 'readwrite', t => marcarPendenteTx(t.objectStore('meta'), rel.diasProprios)); agendarEnvio(); }
   const prox = await proximoId();
   if (!estado.editandoId) $('#id-atual').textContent = prox;
   atualizarCabecalho(prox);
@@ -1243,6 +1309,179 @@ function mostrarBloqueio(e){
   $('#bloqueio-detalhe').textContent = msgErro(e);
   $('#bloqueio-url').textContent = location.href;
   $('#bloqueio').hidden = false;
+}
+
+/* ---------------- Envio automático ao Drive ----------------
+   Protocolo com o script do Google (Codigo.gs), sempre POST com corpo JSON em texto:
+   - {acao:'login', login, senha}             → {ok, chave}
+   - {acao:'enviar', login, chave, dia, csv}  → {ok, arquivo}
+   O aparelho guarda só a "chave" devolvida no login, nunca a senha.
+   No Drive: <pasta raiz>/<dia>/<login>/<login>_<dia>.csv, regravado a cada envio. */
+const envio = { rodando: false, timer: null };
+
+async function lerAuth(){ const a = await lerUm('meta', 'auth'); return a && a.valor && a.valor.login === estado.equipe ? a.valor : null; }
+async function lerSync(){ const m = await lerUm('meta', 'sync'); const v = (m && m.valor) || {}; v.pendentes = v.pendentes || {}; return v; }
+
+const ERROS_ENVIO = {
+  credenciais: 'Login ou senha incorretos.',
+  bloqueado: 'Este aparelho foi bloqueado pela coordenação.',
+  muitas_tentativas: 'Muitas tentativas erradas. Aguarde 15 minutos.',
+  nao_autorizado: 'Login expirado ou feito em outro aparelho. Entre de novo em Config.',
+  dia_invalido: 'Data de coleta inválida em algum registro.',
+  csv_invalido: 'Arquivo inválido.',
+  nao_configurado: 'Script ainda não configurado (rode "configurar" no Google).'
+};
+
+async function postar(corpo){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 45000);
+  try {
+    // Corpo em texto puro = requisição "simples" (sem pré-checagem CORS), aceita pelo Apps Script
+    const r = await fetch(URL_ENVIO, { method: 'POST', body: JSON.stringify(corpo), redirect: 'follow', signal: ctl.signal });
+    if (!r.ok) throw new Error('Servidor respondeu HTTP ' + r.status + '.');
+    const txt = await r.text();
+    try { return JSON.parse(txt); }
+    catch (e) { throw new Error('Resposta inesperada do Google. O script está implantado com acesso "Qualquer pessoa"?'); }
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('Tempo esgotado: internet lenta ou instável.');
+    if (e instanceof TypeError) throw new Error('Sem conexão com o Google.');
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
+// Na 1ª vez com um código de equipe, marca todos os dias já existentes (ex.: dados de versões anteriores)
+async function inicializarPendencias(){
+  if (!estado.equipe) return;
+  const flag = 'sync_init_' + estado.equipe;
+  if (await lerUm('meta', flag)) return;
+  const regs = await tx(['medidas'], 'readonly', (t, s) => { const r = t.objectStore('medidas').index('equipe').getAll(estado.equipe); r.onsuccess = () => s.valor = r.result; });
+  await tx(['meta'], 'readwrite', t => {
+    const meta = t.objectStore('meta');
+    marcarPendenteTx(meta, regs.map(r => diaDe(r.dataHora)));
+    meta.put({ chave: flag, valor: new Date().toISOString() });
+  });
+}
+
+function agendarEnvio(){
+  clearTimeout(envio.timer);
+  envio.timer = setTimeout(() => enviarPendentes(false), ESPERA_APOS_SALVAR_MS);
+  atualizarStatusEnvio();
+}
+
+async function enviarPendentes(manual){
+  if (envio.rodando || !db || !estado.equipe) return;
+  const avisar = msg => { if (manual) toast(msg, true); };
+  if (!URL_ENVIO) { avisar('Envio ao Drive não configurado nesta versão do app.'); return; }
+  const auth = await lerAuth();
+  if (!auth) { avisar('Faça login em Config. para enviar.'); atualizarStatusEnvio(); return; }
+  if (navigator.onLine === false) { avisar('Sem internet. Os dados ficam no aparelho e serão enviados depois.'); return; }
+
+  envio.rodando = true;
+  atualizarStatusEnvio();
+  let enviados = 0;
+  try {
+    const s = await lerSync();
+    const dias = Object.keys(s.pendentes).sort();
+    if (!dias.length) { if (manual) toast('✓ Nada pendente: tudo já está no Drive.'); return; }
+    const regs = await tx(['medidas'], 'readonly', (t, x) => { const r = t.objectStore('medidas').index('equipe').getAll(estado.equipe); r.onsuccess = () => x.valor = r.result; });
+    for (const dia of dias) {
+      const versao = s.pendentes[dia];
+      const doDia = regs.filter(r => diaDe(r.dataHora) === dia).sort((a, b) => a.id.localeCompare(b.id));
+      const resp = await postar({ acao: 'enviar', login: auth.login, chave: auth.chave, dia, csv: gerarCSV(doDia), qtd: doDia.length, versaoApp: APP_VERSAO });
+      if (!resp.ok) {
+        if (resp.erro === 'nao_autorizado' || resp.erro === 'bloqueado') await sairEnvio();
+        throw new Error(ERROS_ENVIO[resp.erro] || resp.detalhe || resp.erro || 'Erro desconhecido no servidor.');
+      }
+      // Só limpa se nada mudou neste dia enquanto enviava
+      await tx(['meta'], 'readwrite', t => {
+        const meta = t.objectStore('meta');
+        const r = meta.get('sync');
+        r.onsuccess = () => {
+          const v = (r.result && r.result.valor) || { pendentes: {} };
+          v.pendentes = v.pendentes || {};
+          if (v.pendentes[dia] === versao) delete v.pendentes[dia];
+          v.ultimoEnvio = new Date().toISOString();
+          v.ultimoErro = null;
+          meta.put({ chave: 'sync', valor: v });
+        };
+      });
+      enviados++;
+    }
+    if (manual) toast(`✓ Enviado ao Drive (${enviados} dia${enviados > 1 ? 's' : ''} de coleta)`);
+  } catch (e) {
+    console.error('Envio:', e);
+    try {
+      const v = await lerSync();
+      v.ultimoErro = { quando: new Date().toISOString(), msg: e.message || String(e) };
+      await gravarMeta('sync', v);
+    } catch (_) {}
+    if (manual) modal({ titulo: 'Envio não concluído', tipo: 'warn', texto: (e.message || String(e)) + '\n\nOs dados continuam salvos no aparelho. O app tenta de novo sozinho.', botoes: [{ txt: 'OK', valor: true, cls: 'btn-pri' }] });
+  } finally {
+    envio.rodando = false;
+    atualizarStatusEnvio();
+  }
+}
+
+async function atualizarStatusEnvio(){
+  const els = $$('[data-status-envio]');
+  if (!db || !estado.equipe || !URL_ENVIO) { els.forEach(e => e.hidden = true); return; }
+  let texto, cls;
+  try {
+    const [auth, s] = await Promise.all([lerAuth(), lerSync()]);
+    const dias = Object.keys(s.pendentes);
+    let qtd = 0;
+    if (dias.length) {
+      const regs = await tx(['medidas'], 'readonly', (t, x) => { const r = t.objectStore('medidas').index('equipe').getAll(estado.equipe); r.onsuccess = () => x.valor = r.result; });
+      qtd = regs.filter(r => s.pendentes[diaDe(r.dataHora)]).length;
+    }
+    const hora = s.ultimoEnvio ? new Date(s.ultimoEnvio).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
+    if (!auth) { texto = `☁ Drive: faça login em Config. para enviar${dias.length ? ` (${qtd} registros aguardando)` : ''}`; cls = 'warn'; }
+    else if (envio.rodando) { texto = '☁ Enviando ao Drive…'; cls = ''; }
+    else if (!dias.length) { texto = `☁ Drive: tudo enviado ✓${hora ? ' · último envio ' + hora : ''}`; cls = 'ok'; }
+    else if (s.ultimoErro) { texto = `⚠ Drive: ${qtd} registro(s) pendente(s) — ${s.ultimoErro.msg}`; cls = 'erro'; }
+    else { texto = `☁ Drive: ${qtd} registro(s) pendente(s)${navigator.onLine === false ? ' · sem internet' : ''}`; cls = 'warn'; }
+  } catch (e) { texto = '☁ Drive: status indisponível'; cls = 'warn'; }
+  for (const el of els) { el.hidden = false; el.textContent = texto; el.className = 'status-envio ' + cls; }
+  const det = $('#envio-detalhe'); if (det) det.textContent = texto;
+}
+
+async function mostrarLogin(){
+  const auth = await lerAuth();
+  $('#l-login').value = estado.equipe || '(configure o código acima primeiro)';
+  $('#form-login').hidden = !!auth;
+  $('#envio-logado').hidden = !auth;
+  $('#login-erro').hidden = true;
+  if (auth) $('#envio-login').textContent = auth.login;
+  if (!URL_ENVIO) { $('#envio-explica').textContent = '⚠ Envio ao Drive ainda não foi ligado nesta versão do app (falta o endereço do script — ver LEIAME).'; $('#form-login').hidden = true; }
+  atualizarStatusEnvio();
+}
+
+async function aoEntrar(ev){
+  ev.preventDefault();
+  const erro = $('#login-erro');
+  const mostrar = m => { erro.hidden = false; erro.textContent = m; };
+  erro.hidden = true;
+  if (!estado.equipe) return mostrar('Defina o código do aparelho (EQ01…) e salve antes de entrar.');
+  const senha = $('#l-senha').value;
+  if (!senha) return mostrar('Digite a senha.');
+  if (navigator.onLine === false) return mostrar('Sem internet. O login precisa de conexão (a coleta funciona mesmo sem login).');
+  const btn = $('#btn-entrar'); btn.disabled = true; btn.textContent = 'Entrando…';
+  try {
+    const r = await postar({ acao: 'login', login: estado.equipe, senha });
+    if (!r.ok) return mostrar(ERROS_ENVIO[r.erro] || r.detalhe || 'Falha no login.');
+    await gravarMeta('auth', { login: estado.equipe, chave: r.chave, quando: new Date().toISOString() });
+    $('#l-senha').value = '';
+    toast('✓ Login feito. Enviando registros pendentes…');
+    await mostrarLogin();
+    enviarPendentes(true);
+  } catch (e) { mostrar(e.message || String(e)); }
+  finally { btn.disabled = false; btn.textContent = 'Entrar'; }
+}
+
+async function sairEnvio(){
+  try { await tx(['meta'], 'readwrite', t => t.objectStore('meta').delete('auth')); } catch (e) {}
+  if (!$('#tela-setup').hidden) mostrarLogin();
+  atualizarStatusEnvio();
 }
 
 /* ---------------- PWA: offline e instalação ---------------- */
@@ -1354,6 +1593,17 @@ async function iniciar(){
   $('#btn-ios-continuar').onclick = () => { $('#instalar-ios').hidden = true; try { sessionStorage.setItem('antropo_ios_ok', '1'); } catch (e) {} };
   registrarServiceWorker();
   configurarInstalacao();
+  $('#form-login').addEventListener('submit', aoEntrar);
+  $('#btn-enviar-agora').onclick = () => enviarPendentes(true);
+  $('#btn-sair').onclick = async () => {
+    const ok = await modal({ titulo: 'Sair do envio ao Drive?', tipo: 'warn', texto: 'Os registros continuam no aparelho, mas deixam de ser enviados até um novo login.', botoes: [{ txt: 'Cancelar', valor: false, cls: 'btn-pri' }, { txt: 'Sair', valor: true, cls: 'btn-perigo' }] });
+    if (ok) { await sairEnvio(); toast('Login desfeito.'); }
+  };
+  for (const b of $$('[data-status-envio]')) b.onclick = () => mostrarTela('setup');
+  window.addEventListener('online', () => enviarPendentes(false));
+  window.addEventListener('offline', () => atualizarStatusEnvio());
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') enviarPendentes(false); });
+  setInterval(() => enviarPendentes(false), INTERVALO_ENVIO_MS);
 
   // 1) Banco + autoteste de gravação. Se falhar, bloqueia a coleta.
   try { db = await abrirDB(); await autoTeste(); }
@@ -1394,6 +1644,8 @@ async function iniciar(){
 
   if (estado.equipe) {
     await sincronizarContador(estado.equipe);
+    try { await inicializarPendencias(); } catch (e) { console.error(e); }
+    setTimeout(() => enviarPendentes(false), 2000);
     const prox = await proximoId();
     $('#id-atual').textContent = prox;
     atualizarCabecalho(prox);
