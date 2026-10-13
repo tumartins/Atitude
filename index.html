@@ -221,6 +221,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
     <h2>Envio automático para o Drive</h2>
     <div class="alerta info">
       <p id="envio-explica">Com login feito, os registros deste aparelho são enviados sozinhos para o Drive da pesquisa sempre que o app estiver aberto e com internet. Os dados continuam também no aparelho.</p>
+      <p class="dica">⚠ Aparelho reinstalado ou que já foi usado antes? Faça o login <b>antes</b> de coletar: assim a numeração continua de onde parou.</p>
       <form id="form-login" novalidate autocomplete="off">
         <!-- Login não é digitável: é sempre o código do aparelho. Tocar nele leva à senha. -->
         <p class="login-fixo">Login deste aparelho: <b id="l-login">—</b></p>
@@ -381,7 +382,7 @@ input:focus,textarea:focus{outline:3px solid var(--pri);outline-offset:1px}
    Prioridades: 1) não perder dados  2) IDs não colidirem  3) offline
    ========================================================================= */
 
-const APP_VERSAO = '1.3.1'; // manter igual a VERSAO em sw.js
+const APP_VERSAO = '1.4.0'; // manter igual a VERSAO em sw.js
 const DB_NOME = 'antropometria';
 const DB_VERSAO = 2; // v2: índice idAvaliando
 const REGEX_AVALIANDO = /^\d{1,12}$/;
@@ -575,14 +576,20 @@ async function proximoId(){
 // Marca dias de coleta como "precisa reenviar ao Drive". Roda dentro da MESMA transação
 // que grava o registro: se o registro foi salvo, a pendência também foi.
 // Cada marcação incrementa a versão do dia; o envio só limpa a pendência se a versão não mudou.
-function marcarPendenteTx(meta, dias){
+// "remover" = {dia: [ids]}: registros que SAÍRAM daquele dia (excluídos ou com data editada).
+// O Drive mescla por ID, então precisa ser avisado explicitamente do que tirar.
+function marcarPendenteTx(meta, dias, remover){
   dias = [...new Set(dias.filter(d => REGEX_DIA.test(d || '')))];
   if (!dias.length) return;
   const r = meta.get('sync');
   r.onsuccess = () => {
     const v = (r.result && r.result.valor) || {};
     v.pendentes = v.pendentes || {};
+    v.removidos = v.removidos || {};
     for (const d of dias) v.pendentes[d] = (v.pendentes[d] || 0) + 1;
+    for (const [d, ids] of Object.entries(remover || {})) {
+      if (REGEX_DIA.test(d)) v.removidos[d] = [...new Set([...(v.removidos[d] || []), ...ids])];
+    }
     meta.put({ chave: 'sync', valor: v });
   };
 }
@@ -627,7 +634,10 @@ function atualizarRegistro(id, dados){
       const reg = { ...orig, ...dados, id: orig.id, equipe: orig.equipe, seq: orig.seq, criadoEm: orig.criadoEm, atualizadoEm: new Date().toISOString() };
       st.put(reg);
       // Se a data mudou, os dois dias precisam ser reenviados
-      if (orig.equipe === estado.equipe) marcarPendenteTx(t.objectStore('meta'), [diaDe(orig.dataHora), diaDe(reg.dataHora)]);
+      if (orig.equipe === estado.equipe) {
+        const diaAntes = diaDe(orig.dataHora), diaDepois = diaDe(reg.dataHora);
+        marcarPendenteTx(t.objectStore('meta'), [diaAntes, diaDepois], diaAntes !== diaDepois ? { [diaAntes]: [orig.id] } : null);
+      }
       s.valor = reg;
     };
   });
@@ -641,7 +651,10 @@ function excluirRegistro(id){
       if (!r.result) return;
       t.objectStore('lixeira').put({ ...r.result, excluidoEm: new Date().toISOString() });
       st.delete(id);
-      if (r.result.equipe === estado.equipe) marcarPendenteTx(t.objectStore('meta'), [diaDe(r.result.dataHora)]);
+      if (r.result.equipe === estado.equipe) {
+        const dia = diaDe(r.result.dataHora);
+        marcarPendenteTx(t.objectStore('meta'), [dia], { [dia]: [id] });
+      }
     };
   });
 }
@@ -1315,9 +1328,10 @@ function mostrarBloqueio(e){
 /* ---------------- Envio automático ao Drive ----------------
    Protocolo com o script do Google (Codigo.gs), sempre POST com corpo JSON em texto:
    - {acao:'login', login, senha}             → {ok, chave}
-   - {acao:'enviar', login, chave, dia, csv}  → {ok, arquivo}
+   - {acao:'enviar', login, chave, dia, csv, excluidos} → {ok, arquivo, total, mantidos}
    O aparelho guarda só a "chave" devolvida no login, nunca a senha.
-   No Drive: <pasta raiz>/<dia>/<login>/<login>_<dia>.csv, regravado a cada envio. */
+   No Drive: <pasta raiz>/<dia>/<login>/<login>_<dia>.csv. O script MESCLA por ID:
+   o que já estava no Drive nunca some, exceto IDs listados em "excluidos". */
 const envio = { rodando: false, timer: null };
 
 async function lerAuth(){ const a = await lerUm('meta', 'auth'); return a && a.valor && a.valor.login === estado.equipe ? a.valor : null; }
@@ -1388,7 +1402,8 @@ async function enviarPendentes(manual){
     for (const dia of dias) {
       const versao = s.pendentes[dia];
       const doDia = regs.filter(r => diaDe(r.dataHora) === dia).sort((a, b) => a.id.localeCompare(b.id));
-      const resp = await postar({ acao: 'enviar', login: auth.login, chave: auth.chave, dia, csv: gerarCSV(doDia), qtd: doDia.length, versaoApp: APP_VERSAO });
+      const excluidos = (s.removidos && s.removidos[dia]) || [];
+      const resp = await postar({ acao: 'enviar', login: auth.login, chave: auth.chave, dia, csv: gerarCSV(doDia), excluidos, qtd: doDia.length, versaoApp: APP_VERSAO });
       if (!resp.ok) {
         if (resp.erro === 'nao_autorizado' || resp.erro === 'bloqueado') await sairEnvio();
         throw new Error(ERROS_ENVIO[resp.erro] || resp.detalhe || resp.erro || 'Erro desconhecido no servidor.');
@@ -1400,7 +1415,7 @@ async function enviarPendentes(manual){
         r.onsuccess = () => {
           const v = (r.result && r.result.valor) || { pendentes: {} };
           v.pendentes = v.pendentes || {};
-          if (v.pendentes[dia] === versao) delete v.pendentes[dia];
+          if (v.pendentes[dia] === versao) { delete v.pendentes[dia]; if (v.removidos) delete v.removidos[dia]; }
           v.ultimoEnvio = new Date().toISOString();
           v.ultimoErro = null;
           meta.put({ chave: 'sync', valor: v });
@@ -1471,6 +1486,15 @@ async function aoEntrar(ev){
     const r = await postar({ acao: 'login', login: estado.equipe, senha });
     if (!r.ok) return mostrar(ERROS_ENVIO[r.erro] || r.detalhe || 'Falha no login.');
     await gravarMeta('auth', { login: estado.equipe, chave: r.chave, quando: new Date().toISOString() });
+    // Aparelho reinstalado/zerado: continua a numeração depois do maior ID que já chegou ao Drive
+    if (r.maiorSeq > 0) {
+      const atual = parseInt(lsGet(LS.contador + estado.equipe) || '0', 10) || 0;
+      if (r.maiorSeq > atual) lsSet(LS.contador + estado.equipe, String(r.maiorSeq));
+      await sincronizarContador(estado.equipe);
+      const prox = await proximoId();
+      if (!estado.editandoId) $('#id-atual').textContent = prox;
+      atualizarCabecalho(prox);
+    }
     $('#l-senha').value = '';
     toast('✓ Login feito. Enviando registros pendentes…');
     await mostrarLogin();
